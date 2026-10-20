@@ -44,7 +44,7 @@ skeleton-agent/
 │   ├── config.py           주소·토픽·횟수 설정, .env 읽기
 │   ├── send_test.py        Spring 없이 시험
 │   ├── samples/            Spring에서 사진을 못 받으면 쓰는 예시 2장 (PCB 1, 기계 1)
-│   └── 코드리뷰.md          한 줄씩 설명
+│   └── (리포트는 reports/ 에 생김)
 ├── mcp_servers/
 │   ├── pcb/                PCB 결함 MCP (YOLO, stdio). 워커가 부를 때마다 실행
 │   └── mechanical/         금속 표면 결함 MCP (YOLO, HTTP 9104). 미리 켜 둔다
