@@ -6,16 +6,17 @@ import ConfidenceBar from '@/components/common/ConfidenceBar.vue'
 import DataSourceList from '@/components/common/DataSourceList.vue'
 import type { CauseCandidate, DataSource } from '@/types'
 
-defineProps<{ candidates: CauseCandidate[]; sources: DataSource[] }>()
+/** bare: 접이식 섹션 안에 넣을 때 카드 테두리·제목·AI 배지 없이 목록만 */
+defineProps<{ candidates: CauseCandidate[]; sources: DataSource[]; bare?: boolean }>()
 </script>
 
 <template>
-  <section class="card">
-    <div class="card-head">
+  <section :class="{ card: !bare }">
+    <div v-if="!bare" class="card-head">
       <h3><ListOrdered :size="22" /> 원인 후보 순위</h3>
       <AiBadge compact />
     </div>
-    <ol class="cands">
+    <ol class="cands" :class="{ bare }">
       <li v-for="c in candidates" :key="c.rank" :class="{ top: c.rank === 1 }">
         <span class="rank" :aria-label="`${c.rank}순위`">{{ c.rank }}</span>
         <div class="main">
@@ -46,6 +47,9 @@ defineProps<{ candidates: CauseCandidate[]; sources: DataSource[] }>()
   padding: 8px 22px 18px;
   display: grid;
   gap: 4px;
+}
+.cands.bare {
+  padding: 0;
 }
 .cands > li {
   display: grid;

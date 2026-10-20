@@ -6,7 +6,8 @@ import DataSourceList from '@/components/common/DataSourceList.vue'
 import AnnotatedImage from './AnnotatedImage.vue'
 import type { AgentResult, DataSource, RepairImage } from '@/types'
 
-const props = defineProps<{ result: AgentResult; images: RepairImage[]; sources: DataSource[] }>()
+/** hideImage: 사진 이상 영역을 화면의 별도 섹션에서 모아 보여 줄 때 카드 안 사진을 숨김 */
+const props = defineProps<{ result: AgentResult; images: RepairImage[]; sources: DataSource[]; hideImage?: boolean }>()
 
 const AGENT = { PCB: { label: 'PCB 분석', icon: Cpu }, MOTOR: { label: '모터 분석', icon: Cog }, SW: { label: 'SW·로그 분석', icon: Code2 } }
 const VERDICT = {
@@ -36,7 +37,7 @@ const anns = computed(() => props.result.annotations.filter((a) => a.imageId ===
       <ul class="findings">
         <li v-for="f in result.findings" :key="f">{{ f }}</li>
       </ul>
-      <AnnotatedImage v-if="annotatedImage" :image="annotatedImage" :annotations="anns" :title="`${AGENT[result.agent].label} · 이상 영역`" />
+      <AnnotatedImage v-if="annotatedImage && !hideImage" :image="annotatedImage" :annotations="anns" :title="`${AGENT[result.agent].label} · 이상 영역`" />
       <ConfidenceBar :value="result.confidence" label="Agent 신뢰도" size="sm" />
       <div class="foot">
         <DataSourceList :sources="sources" :ids="result.sourceIds" inline />
