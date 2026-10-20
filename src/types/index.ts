@@ -349,8 +349,13 @@ export interface Page<T> {
   total: number
 }
 
+/** 상태 필터 그룹 (표시 순서·일괄 필터용) */
+export type StatusGroupKey = 'AI_ANALYSIS' | 'TECHNICIAN' | 'HQ' | 'DONE'
+
 export interface RepairQuery {
   status?: RepairStatus | 'ALL'
+  /** 그룹 단위 필터. status 와 함께 쓰지 않는다 */
+  group?: StatusGroupKey
   keyword?: string
   sort?: 'receivedAt_desc' | 'receivedAt_asc' | 'urgency'
   part?: string
@@ -367,6 +372,9 @@ export interface RepairSummaryCounts {
   analyzing: number
   manualReview: number
 }
+
+/** 상태별 건수 (상태 필터 적용 전 · 검색어/모델 필터 적용 후) */
+export type RepairStatusCounts = Partial<Record<RepairStatus, number>>
 
 export interface Notification {
   id: string

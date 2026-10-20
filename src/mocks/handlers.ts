@@ -13,6 +13,7 @@ import type {
   Repair,
   RepairImage,
   RepairQuery,
+  RepairStatusCounts,
   RepairSummaryCounts,
   Role,
   User,
@@ -29,6 +30,7 @@ import type {
   UploadImageRequest,
 } from '@/types/api'
 import { ApiError } from '@/api/http'
+import { STATUS_GROUPS } from '@/constants/status'
 import { productFromSerial, stagesFor, USERS, type DefectRecord } from './data'
 import { approvedRecords, baseDefectRecords, db, nextId, persist } from './db'
 import { restartAnalysis, runAnalysis } from './engine'
@@ -83,12 +85,11 @@ export function getProduct(serial: string) {
 
 /* ---------------- 수리 목록 ---------------- */
 const URGENCY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
-export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSummaryCounts } {
+export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSummaryCounts; statusCounts: RepairStatusCounts } {
   const u = me()
   // 기사는 본인 지점 건만, 본사·부품 담당자는 전체
   let items = db.repairs.filter((r) => (u.role === 'TECHNICIAN' ? r.branch === u.branch : true))
   const scope = items
-  if (q.status && q.status !== 'ALL') items = items.filter((r) => r.status === q.status)
   if (q.model) items = items.filter((r) => r.product.model === q.model)
   if (q.keyword) {
     const k = q.keyword.trim().toLowerCase()
@@ -100,6 +101,14 @@ export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSumm
           [r.receiptNo, r.product.serialNumber, r.product.model, r.technician, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)),
         )
   }
+  // 칩 건수: 검색어·모델 필터는 반영하고 상태 필터는 적용하기 전 기준 (칩을 눌렀을 때 나올 건수)
+  const statusCounts: RepairStatusCounts = {}
+  items.forEach((r) => (statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1))
+  if (q.status && q.status !== 'ALL') items = items.filter((r) => r.status === q.status)
+  else if (q.group) {
+    const g = STATUS_GROUPS.find((x) => x.key === q.group)
+    if (g) items = items.filter((r) => g.statuses.includes(r.status))
+  }
   const sort = q.sort ?? 'receivedAt_desc'
   items = [...items].sort((a, b) => {
     if (sort === 'urgency') return URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || b.receivedAt.localeCompare(a.receivedAt)
@@ -109,6 +118,7 @@ export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSumm
   return {
     items,
     total: items.length,
+    statusCounts,
     counts: {
       needPhoto: c(['ADDITIONAL_INFO_NEEDED']),
       technicianReview: c(['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW']),

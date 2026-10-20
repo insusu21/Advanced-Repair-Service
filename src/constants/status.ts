@@ -13,7 +13,7 @@ import {
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AnalysisStage, RepairStatus, Role, Urgency, OrderStatus, DecisionState } from '@/types'
+import type { AnalysisStage, RepairStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -53,6 +53,14 @@ export const STATUS_ORDER: RepairStatus[] = [
   'REJECTED',
   'MANUAL_REVIEW',
   'CLOSED',
+]
+
+/** 수리 목록 상태 필터의 그룹 (표시 순서용). 개별 상태는 모두 그대로 노출한다 */
+export const STATUS_GROUPS: { key: StatusGroupKey; label: string; statuses: RepairStatus[] }[] = [
+  { key: 'AI_ANALYSIS', label: 'AI 분석', statuses: ['RECEIVED', 'QUEUED', 'ANALYZING'] },
+  { key: 'TECHNICIAN', label: '기사 처리', statuses: ['ADDITIONAL_INFO_NEEDED', 'DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'REJECTED'] },
+  { key: 'HQ', label: '본사 검토', statuses: ['HQ_APPROVAL', 'MANUAL_REVIEW'] },
+  { key: 'DONE', label: '완료', statuses: ['APPROVED', 'CLOSED'] },
 ]
 
 /** 진단 진행 화면에서 "분석 중" 으로 다루는 상태 */

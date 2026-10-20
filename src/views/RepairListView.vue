@@ -8,10 +8,10 @@ import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import RepairTable from '@/components/repair/RepairTable.vue'
 import { useRepairListStore } from '@/stores/repairs'
 import { useAuthStore } from '@/stores/auth'
-import { STATUS_META, STATUS_ORDER } from '@/constants/status'
+import { STATUS_GROUPS, STATUS_META, STATUS_ORDER } from '@/constants/status'
 import { MODELS } from '@/mocks/data'
 import { formatRelative } from '@/utils/format'
-import type { RepairQuery, RepairStatus } from '@/types'
+import type { RepairQuery, RepairStatus, StatusGroupKey } from '@/types'
 
 const store = useRepairListStore()
 const auth = useAuthStore()
@@ -19,11 +19,12 @@ const route = useRoute()
 const router = useRouter()
 const keyword = ref(store.query.keyword ?? '')
 
-const statuses = STATUS_ORDER.filter((s) => s !== 'DRAFT')
-
 function syncFromRoute() {
   const s = route.query.status
   store.query.status = typeof s === 'string' && (STATUS_ORDER as string[]).includes(s) ? (s as RepairStatus) : 'ALL'
+  const g = route.query.group
+  // 개별 상태가 지정되면 그룹 필터는 무시
+  store.query.group = store.query.status === 'ALL' ? STATUS_GROUPS.find((x) => x.key === g)?.key : undefined
   store.query.keyword = typeof route.query.q === 'string' ? route.query.q : ''
   keyword.value = store.query.keyword
 }
@@ -48,9 +49,21 @@ watch(keyword, (v) => {
 
 function setStatus(s: RepairQuery['status']) {
   store.query.status = s
-  void router.replace({ query: { ...route.query, status: s === 'ALL' ? undefined : s } })
+  store.query.group = undefined
+  void router.replace({ query: { ...route.query, status: s === 'ALL' ? undefined : s, group: undefined } })
   void store.fetch()
 }
+/** 그룹 이름 클릭 → 그 그룹의 상태를 한 번에 필터링 */
+function setGroup(g: StatusGroupKey) {
+  store.query.status = 'ALL'
+  store.query.group = g
+  void router.replace({ query: { ...route.query, status: undefined, group: g } })
+  void store.fetch()
+}
+// 서버가 statusCounts 를 주지 않거나 비어 있으면 건수를 모르는 것으로 보고 숫자·흐림 표시를 하지 않는다
+const hasCounts = computed(() => Object.keys(store.statusCounts).length > 0)
+const countOf = (s: RepairStatus) => store.statusCounts[s] ?? 0
+const allCount = computed(() => Object.values(store.statusCounts).reduce((a, n) => a + (n ?? 0), 0))
 function onSort() {
   void store.fetch()
 }
@@ -60,7 +73,7 @@ function clearAll() {
   void router.replace({ query: {} })
   void store.fetch()
 }
-const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.keyword || !!store.query.model)
+const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.group || !!store.query.keyword || !!store.query.model)
 </script>
 
 <template>
@@ -110,11 +123,40 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.ke
         </div>
         <button v-if="filtered" type="button" class="btn btn-ghost" @click="clearAll"><X :size="18" /> 필터 초기화</button>
       </div>
-      <div class="chips" role="radiogroup" aria-label="진단 상태 필터">
-        <button type="button" class="chip" role="radio" :aria-checked="store.query.status === 'ALL'" @click="setStatus('ALL')">전체</button>
-        <button v-for="s in statuses" :key="s" type="button" class="chip" role="radio" :aria-checked="store.query.status === s" @click="setStatus(s)">
-          <component :is="STATUS_META[s].icon" :size="15" /> {{ STATUS_META[s].label }}
-        </button>
+      <div class="chips" aria-label="진단 상태 필터" role="group">
+        <div class="chip-row">
+          <span class="group-label" aria-hidden="true" />
+          <div class="chip-list">
+            <button type="button" class="chip" :aria-pressed="store.query.status === 'ALL' && !store.query.group" @click="setStatus('ALL')">
+              전체 <span v-if="hasCounts" class="n">{{ allCount }}</span>
+            </button>
+          </div>
+        </div>
+        <div v-for="g in STATUS_GROUPS" :key="g.key" class="chip-row">
+          <button
+            type="button"
+            class="group-label"
+            :aria-pressed="store.query.group === g.key"
+            :title="`${g.label} 단계 상태 모두 보기`"
+            @click="setGroup(g.key)"
+          >
+            {{ g.label }}
+          </button>
+          <div class="chip-list">
+            <button
+              v-for="s in g.statuses"
+              :key="s"
+              type="button"
+              class="chip"
+              :class="{ zero: hasCounts && !countOf(s), 'in-group': store.query.group === g.key }"
+              :aria-pressed="store.query.status === s"
+              :aria-label="hasCounts ? `${STATUS_META[s].label} ${countOf(s)}건` : STATUS_META[s].label"
+              @click="setStatus(s)"
+            >
+              <component :is="STATUS_META[s].icon" :size="15" aria-hidden="true" /> {{ STATUS_META[s].label }} <span v-if="hasCounts" class="n">{{ countOf(s) }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div v-if="store.loading && !store.items.length" class="card-body"><SkeletonBlock :lines="6" :height="44" /></div>
@@ -161,11 +203,65 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.ke
   color: var(--text-2);
 }
 .chips {
+  display: grid;
+  gap: 8px;
+  padding: 8px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.chip-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.chip-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 20px 14px;
-  border-bottom: 1px solid var(--border);
+}
+.group-label {
+  justify-self: start;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+span.group-label {
+  cursor: default;
+}
+button.group-label:hover {
+  color: var(--text-2);
+  text-decoration: underline;
+}
+.group-label[aria-pressed='true'] {
+  color: var(--navy-800);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.n {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.chip.zero {
+  opacity: 0.55;
+}
+/* 그룹 필터 중에는 해당 그룹의 칩에 테두리만 강조 (선택된 칩 배경은 개별 상태 선택에만 사용) */
+.chip.in-group {
+  border-color: var(--navy-800);
+}
+@media (max-width: 860px) {
+  .chip-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  span.group-label {
+    display: none;
+  }
 }
 .chip {
   display: inline-flex;
@@ -180,9 +276,12 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.ke
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.chip[aria-checked='true'] {
+.chip[aria-pressed='true'] {
   background: var(--navy-800);
   border-color: var(--navy-800);
+  color: #fff;
+}
+.chip[aria-pressed='true'] .n {
   color: #fff;
 }
 .count {

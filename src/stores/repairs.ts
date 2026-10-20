@@ -3,13 +3,14 @@ import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 import { repairApi, toErrorMessage } from '@/api'
 import { connectAllEvents, type SseConnection } from '@/services/sse'
-import type { Repair, RepairEvent, RepairQuery, RepairSummaryCounts } from '@/types'
+import type { Repair, RepairEvent, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 
 const EMPTY_COUNTS: RepairSummaryCounts = { needPhoto: 0, technicianReview: 0, hqApproval: 0, completed: 0, analyzing: 0, manualReview: 0 }
 
 export const useRepairListStore = defineStore('repairList', () => {
   const items = ref<Repair[]>([])
   const counts = ref<RepairSummaryCounts>({ ...EMPTY_COUNTS })
+  const statusCounts = ref<RepairStatusCounts>({})
   const query = reactive<RepairQuery>({ status: 'ALL', keyword: '', sort: 'receivedAt_desc' })
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -24,6 +25,7 @@ export const useRepairListStore = defineStore('repairList', () => {
       const res = await repairApi.list({ ...query })
       items.value = res.items
       counts.value = res.counts
+      statusCounts.value = res.statusCounts ?? {}
       loadedAt.value = new Date().toISOString()
     } catch (e) {
       error.value = toErrorMessage(e)
@@ -51,6 +53,7 @@ export const useRepairListStore = defineStore('repairList', () => {
       const res = await repairApi.list({ ...query })
       items.value = res.items
       counts.value = res.counts
+      statusCounts.value = res.statusCounts ?? {}
     } catch {
       /* 백그라운드 갱신 실패는 무시 */
     }
@@ -66,8 +69,8 @@ export const useRepairListStore = defineStore('repairList', () => {
   }
 
   function resetQuery() {
-    Object.assign(query, { status: 'ALL', keyword: '', sort: 'receivedAt_desc', model: undefined })
+    Object.assign(query, { status: 'ALL', keyword: '', sort: 'receivedAt_desc', model: undefined, group: undefined })
   }
 
-  return { items, counts, query, loading, error, loadedAt, fetch, startLive, stopLive, resetQuery }
+  return { items, counts, statusCounts, query, loading, error, loadedAt, fetch, startLive, stopLive, resetQuery }
 })

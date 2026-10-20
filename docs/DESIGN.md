@@ -293,7 +293,7 @@ View ─→ store.subscribe ─→ services/sse.ts ─┬─ mock → mocks/db �
 | POST | `/api/repairs` | 접수 생성 (DRAFT) |
 | POST | `/api/repairs/{id}/images` | 사진 업로드 (multipart: kind, file) |
 | POST | `/api/repairs/{id}/submit` | 접수 확정 + AI 진단 요청 *(추가)* |
-| GET | `/api/repairs?status&keyword&sort&model` | 목록 + 요약 카운트 |
+| GET | `/api/repairs?status&group&keyword&sort&model` | 목록 + 요약 카운트(`counts`) + 상태별 건수(`statusCounts`) |
 | GET | `/api/repairs/{id}` | 상세 |
 | GET | `/api/repairs/{id}/diagnosis` | `{ current, versions[] }` |
 | GET | `/api/repairs/{id}/events` | **SSE** 진행 상태 |
@@ -310,6 +310,12 @@ View ─→ store.subscribe ─→ services/sse.ts ─┬─ mock → mocks/db �
 | GET | `/api/dashboard/defects?months=6` | 통계 (승인 데이터만) |
 | GET | `/api/dashboard/defects/records?dim&value` | 그래프 드릴다운 목록 *(추가)* |
 | GET/POST | `/api/notifications`, `/{id}/read`, `/read-all` | 알림 *(추가)* |
+
+`GET /api/repairs` 상세 *(추가)*
+- `group`: `AI_ANALYSIS` · `TECHNICIAN` · `HQ` · `DONE` — 그룹에 속한 상태를 한 번에 필터링 (`STATUS_GROUPS`). `status` 가 함께 오면 `status` 가 우선
+  - AI_ANALYSIS: RECEIVED, QUEUED, ANALYZING / TECHNICIAN: ADDITIONAL_INFO_NEEDED, DIAGNOSIS_COMPLETED, TECHNICIAN_REVIEW, REJECTED / HQ: HQ_APPROVAL, MANUAL_REVIEW / DONE: APPROVED, CLOSED
+- 응답 `statusCounts`: `{ [RepairStatus]: number }` — 상태별 건수. 권한 범위·`keyword`·`model` 은 반영하고 `status`·`group` 필터는 적용하기 전 기준 (칩을 눌렀을 때 나올 건수). 0건인 상태는 생략 가능
+- `statusCounts` 가 없거나 비어 있으면 화면은 칩 건수를 숨기고 필터만 동작
 
 SSE 이벤트 (요청서 스키마 + 확장 필드)
 ```json

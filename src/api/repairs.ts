@@ -1,6 +1,6 @@
 import { http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
-import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairSummaryCounts } from '@/types'
+import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
   ApprovalRequest,
   CreateRepairRequest,
@@ -9,7 +9,7 @@ import type {
   UploadImageRequest,
 } from '@/types/api'
 
-export type RepairListResponse = Page<Repair> & { counts: RepairSummaryCounts }
+export type RepairListResponse = Page<Repair> & { counts: RepairSummaryCounts; statusCounts: RepairStatusCounts }
 export interface DiagnosisResponse {
   current: Diagnosis | null
   versions: Diagnosis[]
