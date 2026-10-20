@@ -7,6 +7,8 @@ Spring이 Kafka로 보낸 진단 명령을 받아 → 사진 분류(GPT) → 증
 
 ## 실행
 
+자세한 순서와 안 될 때 해결법: [코드돌리는 법.md](코드돌리는%20법.md)
+
 준비물: Docker, [uv](https://docs.astral.sh/uv/)
 
 ```bash
