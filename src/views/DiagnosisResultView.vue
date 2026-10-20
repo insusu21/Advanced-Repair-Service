@@ -5,7 +5,7 @@
  *  세부: 원인 후보 · Agent 별 결과 · 사진 이상 영역 · 에러코드 · 유사 사례 · 출처 · 점검 순서 · 수리 방법 · 부품
  *  하단: 진단 내용 확인 / 수정 의견 작성 / 추가 분석 요청 / 본사 검토 요청 / 진단 반려
  * ========================================================================= */
-import { computed, ref } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   CircleCheck, MessageSquarePlus, RotateCw, Building2, CircleX, FileCode2, History, ClipboardList, Wrench,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next'
 import RepairFlowNav from '@/components/repair/RepairFlowNav.vue'
 import RepairSummaryCard from '@/components/repair/RepairSummaryCard.vue'
+import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
 import DiagnosisSummaryCard from '@/components/diagnosis/DiagnosisSummaryCard.vue'
 import DiagnosisEvidenceCard from '@/components/diagnosis/DiagnosisEvidenceCard.vue'
 import AgentAnalysisCard from '@/components/diagnosis/AgentAnalysisCard.vue'
@@ -26,7 +27,7 @@ import { useRepairPage } from '@/composables/useRepairPage'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
-import { formatDate } from '@/utils/format'
+import { formatDate, reportTitle } from '@/utils/format'
 import type { ApprovalAction } from '@/types/approval'
 
 const { store, repair, diagnosis, versions, loading, diagLoading, error, submitting, reload } = useRepairPage({ diagnosis: true, live: true })
@@ -34,6 +35,11 @@ const auth = useAuthStore()
 const toast = useToastStore()
 const router = useRouter()
 const showAllCases = ref(false)
+
+// 브라우저 탭에서도 시리얼이 아닌 수리 ID 로 구분되도록
+watchEffect(() => {
+  if (repair.value) document.title = `${reportTitle(repair.value)} · RobotCare AI`
+})
 const approvalEl = ref<HTMLElement | null>(null)
 
 const isTech = computed(() => auth.role === 'TECHNICIAN')
@@ -96,7 +102,14 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
 
     <template v-else-if="repair">
       <RepairFlowNav :repair="repair" />
+      <div class="page-head">
+        <div>
+          <h1>{{ reportTitle(repair) }}</h1>
+          <p class="sub">시리얼 <span class="mono">{{ repair.product.serialNumber }}</span> · 접수번호 <span class="mono">{{ repair.receiptNo }}</span></p>
+        </div>
+      </div>
       <RepairSummaryCard :repair="repair" compact />
+      <SameSerialHistory :serial="repair.product.serialNumber" :exclude-id="repair.id" />
 
       <div v-if="diagLoading && !diagnosis" class="card card-pad"><SkeletonBlock :lines="6" :height="28" /></div>
 

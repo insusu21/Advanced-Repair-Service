@@ -104,7 +104,7 @@ export async function runAnalysis(repairId: number) {
     db.diagnoses[r.id] = [...list, d]
     r.urgency = d.urgency
     r.history.push({ id: uid('h'), target: 'DIAGNOSIS', action: 'AI_GENERATED', actor: 'AI Orchestrator', actorRole: 'AI', at: new Date().toISOString(), comment: `AI 진단 초안 v${version} 생성 · 기사 확인 필요` })
-    db.notifications.unshift({ id: uid('n'), title: 'AI 진단 초안 도착', body: `${r.receiptNo} (${r.product.model}) 진단 초안을 확인해 주세요.`, at: new Date().toISOString(), read: false, link: `/repairs/${r.id}/diagnosis`, roles: ['TECHNICIAN'] })
+    db.notifications.unshift({ id: uid('n'), title: 'AI 진단 초안 도착', body: `수리 #${r.id} (${r.product.model}) 진단 초안을 확인해 주세요.`, at: new Date().toISOString(), read: false, link: `/repairs/${r.id}/diagnosis`, roles: ['TECHNICIAN'] })
     push(r, 'DIAGNOSIS_COMPLETED', 'AI 진단 초안이 생성되었습니다. 기사 확인이 필요합니다.', 100)
   } finally {
     running.delete(repairId)
@@ -134,7 +134,7 @@ function requestPhoto(r: Repair) {
   db.photoRequests[r.id] = [...(db.photoRequests[r.id] ?? []), req]
   setStage(r, 'MOTOR_ANALYSIS', 'WAITING_INPUT', '하단 연결부 판독 불가 · 추가 사진 대기')
   r.history.push({ id: uid('h'), target: 'PHOTO', action: 'COMMENTED', actor: 'Motor Agent', actorRole: 'AI', at: req.requestedAt, comment: `추가 사진 요청 ${nextNo}/${MAX_PHOTO_REQUESTS}: ${req.target}` })
-  db.notifications.unshift({ id: uid('n'), title: '추가 사진 요청', body: `${r.receiptNo} ${req.target} 사진이 필요합니다.`, at: req.requestedAt, read: false, link: `/repairs/${r.id}/progress`, roles: ['TECHNICIAN'] })
+  db.notifications.unshift({ id: uid('n'), title: '추가 사진 요청', body: `수리 #${r.id} ${req.target} 사진이 필요합니다.`, at: req.requestedAt, read: false, link: `/repairs/${r.id}/progress`, roles: ['TECHNICIAN'] })
   push(r, 'ADDITIONAL_INFO_NEEDED', `${req.target} 사진이 필요합니다.`, 48, 'MOTOR_ANALYSIS', 'WAITING_INPUT', { photoRequest: req })
 }
 

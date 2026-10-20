@@ -7,7 +7,7 @@ import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
 import { repairApi, toErrorMessage } from '@/api'
 import type { Repair } from '@/types'
-import { formatDateTime, formatRelative } from '@/utils/format'
+import { formatDateTime, formatRelative, repairId } from '@/utils/format'
 
 const router = useRouter()
 const items = ref<Repair[]>([])
@@ -60,7 +60,7 @@ const MATCH = {
         <table class="table">
           <thead>
             <tr>
-              <th>접수번호</th>
+              <th>수리 ID</th>
               <th>모델</th>
               <th>AI 진단 원인</th>
               <th v-if="tab === 'HQ_APPROVAL'">기사 확인 원인</th>
@@ -73,7 +73,7 @@ const MATCH = {
           </thead>
           <tbody>
             <tr v-for="r in list" :key="r.id" class="clickable" tabindex="0" @click="router.push(`/approvals/${r.id}`)" @keydown.enter="router.push(`/approvals/${r.id}`)">
-              <td class="mono rno">{{ r.receiptNo }}</td>
+              <td class="mono rno">{{ repairId(r.id) }}</td>
               <td><strong>{{ r.product.model }}</strong></td>
               <td><span class="ai-cell">{{ r.aiTopCause ?? 'AI 진단 없음' }}</span></td>
               <template v-if="tab === 'HQ_APPROVAL' && r.technicianReview">

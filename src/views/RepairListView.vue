@@ -91,7 +91,7 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.ke
         <div class="search">
           <Search :size="20" class="si" aria-hidden="true" />
           <label for="kw" class="sr-only">검색</label>
-          <input id="kw" v-model="keyword" class="input" type="search" placeholder="접수번호 · 시리얼 · 모델 · 증상 · 에러코드 · 기사 이름" />
+          <input id="kw" v-model="keyword" class="input" type="search" placeholder="수리 ID(#101) · 시리얼 · 모델 · 증상 · 에러코드 · 기사 이름" />
         </div>
         <div class="field inline">
           <label for="model">모델</label>

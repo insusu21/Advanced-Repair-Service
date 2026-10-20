@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
 import { URGENCY_META } from '@/constants/status'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, repairId } from '@/utils/format'
 import type { Repair } from '@/types'
 
 defineProps<{ repair: Repair; compact?: boolean }>()
@@ -12,7 +12,7 @@ defineProps<{ repair: Repair; compact?: boolean }>()
     <div class="top">
       <div>
         <div class="row">
-          <span class="mono rno">{{ repair.receiptNo }}</span>
+          <span class="mono rno">수리 ID {{ repairId(repair.id) }}</span>
           <RepairStatusBadge :status="repair.status" :failed="!!repair.analysisError" />
           <span class="badge" :class="`tone-${URGENCY_META[repair.urgency].tone}`">긴급도 {{ URGENCY_META[repair.urgency].label }}</span>
         </div>
@@ -23,6 +23,7 @@ defineProps<{ repair: Repair; compact?: boolean }>()
     <dl class="kv cols" :class="{ compact }">
       <div><dt>시리얼 번호</dt><dd class="mono">{{ repair.product.serialNumber }}</dd></div>
       <div><dt>에러 코드</dt><dd>{{ repair.errorCodes.length ? repair.errorCodes.join(', ') : '없음' }}</dd></div>
+      <div><dt>접수번호</dt><dd class="mono">{{ repair.receiptNo }}</dd></div>
       <div><dt>접수일</dt><dd>{{ formatDateTime(repair.receivedAt) }}</dd></div>
       <div><dt>담당 기사</dt><dd>{{ repair.technician }} · {{ repair.branch }}</dd></div>
       <div v-if="!compact"><dt>생산 공장</dt><dd>{{ repair.product.factory }}</dd></div>

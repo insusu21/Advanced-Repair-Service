@@ -375,6 +375,8 @@ const SEEDS: Seed[] = [
   { id: 112, serial: 'RC2025002205', symptom: '좌측 바퀴 헛돎', errorCodes: ['E210'], status: 'APPROVED', tech: PARK, minutesAgo: 60 * 24 * 6, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
   { id: 108, serial: 'RC2025005502', symptom: '청소 중 정지 후 경고음', errorCodes: ['E103'], status: 'REJECTED', tech: KIM, minutesAgo: 60 * 24 * 3, urgency: 'MEDIUM', diag: 'MOTOR_HOUSING' },
   { id: 109, serial: 'RC2025004403', symptom: '간헐적 전원 꺼짐, 재현 어려움', errorCodes: [], status: 'MANUAL_REVIEW', tech: PARK, minutesAgo: 60 * 24 * 2, urgency: 'MEDIUM', photoRequestCount: 3 },
+  // 같은 제품(RC2026000187)의 이전 수리 건: 시리얼은 겹치므로 수리 ID 로 구분
+  { id: 98, serial: 'RC2026000187', symptom: '흡입력 약해짐, 브러시 회전 느림', errorCodes: ['E302'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 45, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
   { id: 110, serial: 'RC2025003304', symptom: '흡입력 저하', errorCodes: ['E302'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 12, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
 ]
 
@@ -537,10 +539,10 @@ export function createSeed(): MockDbState {
   ]
 
   const notifications: Notification[] = [
-    { id: 'N1', title: 'AI 진단 초안 도착', body: 'SR 101 (RC-A100) 진단 초안을 확인해 주세요.', at: isoAgo(90), read: false, link: '/repairs/101/diagnosis', roles: ['TECHNICIAN'] },
-    { id: 'N2', title: '추가 사진 요청', body: 'SR 102 모터 하단 연결부 사진이 필요합니다.', at: isoAgo(130), read: false, link: '/repairs/102/progress', roles: ['TECHNICIAN'] },
+    { id: 'N1', title: 'AI 진단 초안 도착', body: '수리 #101 (RC-A100) 진단 초안을 확인해 주세요.', at: isoAgo(90), read: false, link: '/repairs/101/diagnosis', roles: ['TECHNICIAN'] },
+    { id: 'N2', title: '추가 사진 요청', body: '수리 #102 모터 하단 연결부 사진이 필요합니다.', at: isoAgo(130), read: false, link: '/repairs/102/progress', roles: ['TECHNICIAN'] },
     { id: 'N3', title: '본사 승인 대기 2건', body: '기사 수리 결과 검토가 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/approvals', roles: ['QUALITY'] },
-    { id: 'N4', title: '수동 검토 전환', body: 'SR 109 추가 사진 3회 초과로 수동 검토로 전환되었습니다.', at: isoAgo(60 * 30), read: false, link: '/repairs/109/diagnosis', roles: ['QUALITY'] },
+    { id: 'N4', title: '수동 검토 전환', body: '수리 #109 추가 사진 3회 초과로 수동 검토로 전환되었습니다.', at: isoAgo(60 * 30), read: false, link: '/repairs/109/diagnosis', roles: ['QUALITY'] },
     { id: 'N5', title: '발주 요청 1건', body: '휠 회전 센서(RM-SN-221) 발주 승인이 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/parts', roles: ['PARTS'] },
   ]
 
@@ -549,6 +551,8 @@ export function createSeed(): MockDbState {
 
 /* ---------------- 대시보드용: 승인된 고장 레코드 (사내 고장 DB) ---------------- */
 export interface DefectRecord {
+  /** 수리 건 DB ID (Repair.id) */
+  repairId: number
   receiptNo: string
   model: string
   part: string
@@ -608,6 +612,7 @@ export function createDefectRecords(): DefectRecord[] {
       const branch = pick<string>([['강남 서비스센터', 4], ['부산 서비스센터', 3], ['대구 서비스센터', 2], ['대전 서비스센터', 2], ['광주 서비스센터', 1.5]])
       const day = String(1 + Math.floor(rnd() * 27)).padStart(2, '0')
       records.push({
+        repairId: 5000 + n,
         receiptNo: `SR-${month.replace('-', '')}-${String(n++).padStart(4, '0')}`,
         model,
         part,

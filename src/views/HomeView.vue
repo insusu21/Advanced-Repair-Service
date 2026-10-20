@@ -13,7 +13,7 @@ import { useRepairListStore } from '@/stores/repairs'
 import { useOrderStore } from '@/stores/orders'
 import { ROLE_LABEL } from '@/constants/status'
 import { nextAction, repairLink } from '@/utils/repairFlow'
-import { formatRelative } from '@/utils/format'
+import { formatRelative, repairId } from '@/utils/format'
 import type { RepairStatus } from '@/types'
 
 const auth = useAuthStore()
@@ -94,7 +94,7 @@ const greeting = computed(() => {
               <RepairStatusBadge :status="r.status" :failed="!!r.analysisError" />
               <span class="t-main">
                 <strong>{{ nextAction(r, auth.role) }}</strong>
-                <span class="faint">{{ r.receiptNo }} · {{ r.product.model }} · {{ r.symptom }}</span>
+                <span class="faint">수리 {{ repairId(r.id) }} · {{ r.product.model }} · {{ r.symptom }}</span>
               </span>
               <span class="faint t-time">{{ formatRelative(r.updatedAt) }}</span>
               <ArrowRight :size="20" />
@@ -135,7 +135,7 @@ const greeting = computed(() => {
               <span class="badge tone-warning">승인 대기</span>
               <span class="t-main">
                 <strong>{{ o.partName }} ({{ o.partNo }}) · {{ o.quantity }}개</strong>
-                <span class="faint">{{ o.receiptNo }} · {{ o.fromWarehouse }} · 요청 {{ o.requestedBy }}</span>
+                <span class="faint">수리 {{ repairId(o.repairId) }} · {{ o.fromWarehouse }} · 요청 {{ o.requestedBy }}</span>
               </span>
               <span class="faint t-time">{{ formatRelative(o.requestedAt) }}</span>
               <ArrowRight :size="20" />

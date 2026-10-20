@@ -11,7 +11,7 @@ import AiBadge from '@/components/common/AiBadge.vue'
 import ConfidenceBar from '@/components/common/ConfidenceBar.vue'
 import { ORDER_STATUS_META, ROLE_LABEL } from '@/constants/status'
 import type { Part, PurchaseOrder, Role } from '@/types'
-import { formatDateTime, formatNumber } from '@/utils/format'
+import { formatDateTime, formatNumber, repairId } from '@/utils/format'
 
 const props = defineProps<{ order: PurchaseOrder; part?: Part; role: Role | null; busy?: boolean }>()
 const emit = defineEmits<{
@@ -67,7 +67,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
       <!-- AI 추천 -->
       <div class="ai-zone rec">
         <AiBadge compact label="AI 발주 제안" />
-        <p class="faint">수리 건 <RouterLink :to="`/repairs/${order.repairId}/diagnosis`">{{ order.receiptNo }}</RouterLink></p>
+        <p class="faint">수리 ID <RouterLink :to="`/repairs/${order.repairId}/diagnosis`" class="mono">{{ repairId(order.repairId) }}</RouterLink></p>
         <p><strong>AI 추천 이유</strong><br />{{ order.aiReason }}</p>
         <ConfidenceBar v-if="order.aiConfidence" :value="order.aiConfidence" label="진단 신뢰도" size="sm" />
         <p class="faint">AI 는 발주안을 제안만 합니다. 담당자가 확인·승인해야 발주가 등록됩니다.</p>

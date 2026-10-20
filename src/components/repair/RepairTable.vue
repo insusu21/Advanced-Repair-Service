@@ -4,7 +4,7 @@ import { ChevronRight, Camera } from 'lucide-vue-next'
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
 import { URGENCY_META } from '@/constants/status'
 import type { Repair, Role } from '@/types'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, repairId } from '@/utils/format'
 import { nextAction, repairLink } from '@/utils/repairFlow'
 
 const props = defineProps<{ items: Repair[]; role: Role | null; showTech?: boolean }>()
@@ -18,7 +18,7 @@ const open = (r: Repair) => router.push(repairLink(r, props.role))
       <caption class="sr-only">수리 목록</caption>
       <thead>
         <tr>
-          <th scope="col">접수번호</th>
+          <th scope="col">수리 ID</th>
           <th scope="col">시리얼 번호</th>
           <th scope="col">제품 모델</th>
           <th scope="col">상태</th>
@@ -31,7 +31,7 @@ const open = (r: Repair) => router.push(repairLink(r, props.role))
       <tbody>
         <tr v-for="r in items" :key="r.id" class="clickable" tabindex="0" @click="open(r)" @keydown.enter="open(r)">
           <td>
-            <span class="mono rno">{{ r.receiptNo }}</span>
+            <span class="mono rno">{{ repairId(r.id) }}</span>
             <span v-if="r.urgency === 'HIGH'" class="badge tone-danger urg">{{ URGENCY_META.HIGH.label }}</span>
           </td>
           <td class="mono">{{ r.product.serialNumber }}</td>

@@ -13,6 +13,7 @@ import { useOrderStore } from '@/stores/orders'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
+import { repairId } from '@/utils/format'
 import type { PurchaseOrder } from '@/types'
 
 const route = useRoute()
@@ -92,7 +93,7 @@ async function requestAny(o: PurchaseOrder, payload: { quantity: number; fromWar
       <div class="page-head">
         <div>
           <h1>필요 부품 · 발주 요청</h1>
-          <p class="sub">{{ detail.repair.receiptNo }} · {{ detail.repair.product.modelName }}</p>
+          <p class="sub">수리 ID {{ repairId(detail.repair.id) }} · {{ detail.repair.product.modelName }} · 시리얼 {{ detail.repair.product.serialNumber }}</p>
         </div>
         <RouterLink v-if="auth.role === 'TECHNICIAN' && detail.repair.status === 'TECHNICIAN_REVIEW'" :to="`/repairs/${id}/review`" class="btn btn-primary btn-lg">수리 결과 입력 <ArrowRight :size="20" /></RouterLink>
       </div>

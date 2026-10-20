@@ -7,7 +7,7 @@ import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import type { DrillDim } from '@/api/dashboard'
-import { formatDate, formatNumber } from '@/utils/format'
+import { formatDate, formatNumber, repairId } from '@/utils/format'
 
 const store = useDashboardStore()
 const drillEl = ref<HTMLElement | null>(null)
@@ -145,10 +145,10 @@ const kpis = computed(() =>
         <StateView v-else-if="!store.records.length" state="empty" title="해당 조건의 수리 건이 없습니다" compact />
         <div v-else class="table-wrap scroll">
           <table class="table">
-            <thead><tr><th>접수번호</th><th>모델</th><th>교체 부품</th><th>실제 원인 (승인)</th><th>지점</th><th>생산 공장</th><th>AI 일치</th><th>승인일</th></tr></thead>
+            <thead><tr><th>수리 ID</th><th>모델</th><th>교체 부품</th><th>실제 원인 (승인)</th><th>지점</th><th>생산 공장</th><th>AI 일치</th><th>승인일</th></tr></thead>
             <tbody>
-              <tr v-for="r in store.records.slice(0, 100)" :key="r.receiptNo">
-                <td class="mono">{{ r.receiptNo }}</td>
+              <tr v-for="r in store.records.slice(0, 100)" :key="r.repairId">
+                <td class="mono">{{ repairId(r.repairId) }}</td>
                 <td>{{ r.model }}</td>
                 <td>{{ r.part }}</td>
                 <td><strong>{{ r.cause }}</strong></td>

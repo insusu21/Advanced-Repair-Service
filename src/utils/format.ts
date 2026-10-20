@@ -71,3 +71,13 @@ export async function compressImage(file: File, max = 1280, quality = 0.82): Pro
 export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
+
+/** 수리 건 식별자. 시리얼은 재접수 시 겹칠 수 있으므로 DB ID 로 구분한다 → "#101" */
+export function repairId(id: number): string {
+  return `#${id}`
+}
+
+/** "진단 리포트 #101 · RC-A100" */
+export function reportTitle(repair: { id: number; product: { model: string } }): string {
+  return `진단 리포트 ${repairId(repair.id)} · ${repair.product.model}`
+}

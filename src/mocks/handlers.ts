@@ -92,9 +92,13 @@ export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSumm
   if (q.model) items = items.filter((r) => r.product.model === q.model)
   if (q.keyword) {
     const k = q.keyword.trim().toLowerCase()
-    items = items.filter((r) =>
-      [r.receiptNo, r.product.serialNumber, r.product.model, r.technician, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)),
-    )
+    const idMatch = /^#(\d+)$/.exec(k)
+    // "#101" 처럼 수리 ID 로 검색하면 해당 건만 정확히 반환
+    items = idMatch
+      ? items.filter((r) => r.id === Number(idMatch[1]))
+      : items.filter((r) =>
+          [r.receiptNo, r.product.serialNumber, r.product.model, r.technician, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)),
+        )
   }
   const sort = q.sort ?? 'receivedAt_desc'
   items = [...items].sort((a, b) => {
@@ -215,7 +219,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
     if (req.action === 'REQUEST_HQ_REVIEW' && (r.analysisError || r.status === 'ADDITIONAL_INFO_NEEDED')) {
       r.status = 'MANUAL_REVIEW'
       log(r, { target: 'DIAGNOSIS', action: 'HQ_REVIEW_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment || 'AI 분석 실패로 본사 수동 검토 요청' })
-      db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `${r.receiptNo} 분석 실패 건 수동 검토 요청`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+      db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 분석 실패 건 수동 검토 요청`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
       persist()
       return r
     }
@@ -238,7 +242,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
         d.technicianDecision = decision('CHANGE_REQUESTED')
         r.status = 'MANUAL_REVIEW'
         log(r, { target: 'DIAGNOSIS', action: 'HQ_REVIEW_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment })
-        db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `${r.receiptNo} 기사가 본사 검토를 요청했습니다.`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+        db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 기사가 본사 검토를 요청했습니다.`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
         break
       case 'COMMENT':
         log(r, { target: 'DIAGNOSIS', action: 'COMMENTED', actor: u.name, actorRole: u.role, comment: req.comment })
@@ -259,6 +263,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
         const d = latestDiagnosis(id)
         const month = now.slice(0, 7)
         const rec: DefectRecord = {
+          repairId: r.id,
           receiptNo: r.receiptNo,
           model: r.product.model,
           part: tr.replacedParts[0]?.partName ?? '기타',
@@ -283,7 +288,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
         tr.hqDecision = decision('CHANGE_REQUESTED')
         r.status = 'TECHNICIAN_REVIEW'
         log(r, { target: 'TECH_REVIEW', action: 'CHANGE_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment })
-        db.notifications.unshift({ id: uid('n'), title: '본사 수정 요청', body: `${r.receiptNo}: ${req.comment}`, at: now, read: false, link: `/repairs/${r.id}/review`, roles: ['TECHNICIAN'] })
+        db.notifications.unshift({ id: uid('n'), title: '본사 수정 요청', body: `수리 #${r.id}: ${req.comment}`, at: now, read: false, link: `/repairs/${r.id}/review`, roles: ['TECHNICIAN'] })
         break
       default:
         throw new ApiError(400, '지원하지 않는 처리입니다.')
@@ -294,7 +299,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
     if (!req.comment) throw new ApiError(422, '검토 의견을 입력해 주세요.')
     r.status = 'TECHNICIAN_REVIEW'
     log(r, { target: 'DIAGNOSIS', action: 'CHANGE_REQUESTED', actor: u.name, actorRole: u.role, comment: `본사 수동 진단: ${req.comment}` })
-    db.notifications.unshift({ id: uid('n'), title: '본사 수동 진단 회신', body: `${r.receiptNo}: ${req.comment}`, at: now, read: false, link: `/repairs/${r.id}/review`, roles: ['TECHNICIAN'] })
+    db.notifications.unshift({ id: uid('n'), title: '본사 수동 진단 회신', body: `수리 #${r.id}: ${req.comment}`, at: now, read: false, link: `/repairs/${r.id}/review`, roles: ['TECHNICIAN'] })
   }
   persist()
   return r
@@ -334,7 +339,7 @@ export function technicianReview(id: number, req: TechnicianReviewRequest): Repa
   }
   r.status = 'HQ_APPROVAL'
   log(r, { target: 'TECH_REVIEW', action: 'SUBMITTED', actor: u.name, actorRole: u.role, comment: '수리 결과 입력 및 본사 승인 요청' })
-  db.notifications.unshift({ id: uid('n'), title: '본사 승인 요청', body: `${r.receiptNo} 수리 결과 승인이 필요합니다.`, at: new Date().toISOString(), read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+  db.notifications.unshift({ id: uid('n'), title: '본사 승인 요청', body: `수리 #${r.id} 수리 결과 승인이 필요합니다.`, at: new Date().toISOString(), read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
   persist()
   return r
 }
@@ -399,7 +404,7 @@ export function createOrder(id: number, req: CreateOrderRequest): PurchaseOrder 
   if (o.status !== 'AI_DRAFT' && o.status !== 'REJECTED') throw new ApiError(409, '이미 요청된 발주입니다.')
   Object.assign(o, { quantity: req.quantity, fromWarehouse: req.fromWarehouse, status: 'REQUESTED', requestedBy: u.name, requestedAt: new Date().toISOString(), requestComment: req.comment, decision: { state: 'PENDING' } })
   log(r, { target: 'ORDER', action: 'ORDER_REQUESTED', actor: u.name, actorRole: u.role, comment: `${o.partName}(${o.partNo}) ${o.quantity}개 · ${o.fromWarehouse}` })
-  db.notifications.unshift({ id: uid('n'), title: '발주 승인 요청', body: `${o.partName}(${o.partNo}) ${o.quantity}개 · ${r.receiptNo}`, at: new Date().toISOString(), read: false, link: '/parts', roles: ['PARTS'] })
+  db.notifications.unshift({ id: uid('n'), title: '발주 승인 요청', body: `${o.partName}(${o.partNo}) ${o.quantity}개 · 수리 #${r.id}`, at: new Date().toISOString(), read: false, link: '/parts', roles: ['PARTS'] })
   persist()
   return o
 }

@@ -5,11 +5,12 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, CircleAlert, CircleCheck, Search, Send, X, Loader2, ScanLine, Pencil } from 'lucide-vue-next'
 import StepIndicator from '@/components/repair/StepIndicator.vue'
 import ImageUploader from '@/components/repair/ImageUploader.vue'
+import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
 import { repairApi, toErrorMessage } from '@/api'
 import { useToastStore } from '@/stores/toast'
 import type { PhotoKind, ProductInfo, Urgency } from '@/types'
 import type { UploadItem } from '@/types/upload'
-import { formatDate } from '@/utils/format'
+import { formatDate, repairId } from '@/utils/format'
 
 const router = useRouter()
 const toast = useToastStore()
@@ -129,7 +130,7 @@ async function doSubmit() {
     await repairApi.submit(submit.repairId)
     submit.phase = 'done'
     dirty.value = false
-    toast.success('접수가 완료되었습니다. AI 분석을 시작합니다.')
+    toast.success(`수리 ID ${repairId(submit.repairId)} 로 접수되었습니다. AI 분석을 시작합니다.`)
     void router.replace(`/repairs/${submit.repairId}/progress`)
   } catch (e) {
     submit.error = toErrorMessage(e)
@@ -205,6 +206,7 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <div><dt>펌웨어</dt><dd>{{ form.product.firmware }}</dd></div>
         </dl>
       </div>
+      <SameSerialHistory v-if="form.product" :serial="form.product.serialNumber" compact />
     </section>
 
     <!-- ========== 2단계 ========== -->

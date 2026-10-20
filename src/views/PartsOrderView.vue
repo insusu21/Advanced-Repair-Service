@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { ORDER_STATUS_META } from '@/constants/status'
 import { toErrorMessage } from '@/api'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, repairId } from '@/utils/format'
 import type { OrderStatus, PurchaseOrder } from '@/types'
 
 const store = useOrderStore()
@@ -88,14 +88,14 @@ async function decide(o: PurchaseOrder, p: { action: 'APPROVE' | 'REJECT'; comme
       <div v-else class="table-wrap">
         <table class="table">
           <thead>
-            <tr><th>부품</th><th>수량</th><th>출고 창고</th><th>수리 건</th><th>요청</th><th>상태</th><th>처리</th></tr>
+            <tr><th>부품</th><th>수량</th><th>출고 창고</th><th>수리 ID</th><th>요청</th><th>상태</th><th>처리</th></tr>
           </thead>
           <tbody>
             <tr v-for="o in filteredOrders" :key="o.id">
               <td><strong>{{ o.partName }}</strong><div class="mono faint">{{ o.partNo }}</div></td>
               <td>{{ o.quantity }}개</td>
               <td>{{ o.fromWarehouse }}</td>
-              <td><RouterLink :to="`/repairs/${o.repairId}/parts`" class="mono">{{ o.receiptNo }}</RouterLink></td>
+              <td><RouterLink :to="`/repairs/${o.repairId}/parts`" class="mono">{{ repairId(o.repairId) }}</RouterLink></td>
               <td>{{ o.requestedBy ?? '-' }}<div class="faint">{{ formatDateTime(o.requestedAt) }}</div></td>
               <td><span class="badge" :class="`tone-${ORDER_STATUS_META[o.status].tone}`">{{ ORDER_STATUS_META[o.status].label }}</span></td>
               <td>
