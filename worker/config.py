@@ -27,6 +27,7 @@ SAMPLE_PHOTOS = [str(HERE / "samples/pcb_sample.jpg"), str(HERE / "samples/mech_
 
 # MCP 서버
 MECH_MCP_URL = os.getenv("MECH_MCP_URL", "http://127.0.0.1:9104/mcp")  # mechanical-mcp, 미리 켜 둔다
+RAG_MCP_URL = os.getenv("RAG_MCP_URL", "http://127.0.0.1:8014/mcp")  # Rag_mcp 레포의 rag 서버. 꺼져 있으면 검색 없이 진행
 PCB_MCP_SERVER = str(ROOT / "mcp_servers/pcb/mcp_server.py")  # stdio, 부를 때마다 실행
 PCB_MCP_PYTHON = str(ROOT / "mcp_servers/pcb/.venv/bin/python")  # setup.sh가 만든다
 

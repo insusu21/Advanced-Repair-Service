@@ -1,6 +1,6 @@
 """진단 그래프. 위에서 아래로 실행 순서대로 적었다.
 
-  classify_photos → split_text → [pcb_mcp, mech_mcp, rag_mcp 중 필요한 것 동시에] → judge
+  classify_photos → split_text → [pcb_mcp, mech_mcp 중 필요한 것 동시에] → rag_mcp → judge
       judge → report(완료) | request_photo(사진 요청) | fail(실패) → 끝
 
 노드는 state(바구니)를 읽고, 바꿀 값만 dict로 돌려준다.
@@ -57,16 +57,13 @@ async def split_text(state: State, config) -> dict:
 
 
 def pick_mcps(state: State) -> list[str]:
-    """부를 MCP 노드 이름 목록. 여러 개면 LangGraph가 동시에 실행한다."""
+    """부를 사진 MCP 노드 목록. 여러 개면 LangGraph가 동시에 실행한다. 사진 MCP가 없으면 바로 rag로."""
     kinds = {p["kind"] for p in state["photos"]}
-    clues = state["clues"]
     picked = []
     if "PCB" in kinds:
         picked.append("pcb_mcp")
     if "MECH" in kinds:
         picked.append("mech_mcp")
-    if clues["sw"] or clues["errorCodes"]:
-        picked.append("rag_mcp")
     return picked or ["rag_mcp"]
 
 
@@ -93,10 +90,17 @@ async def mech_mcp(state: State, config) -> dict:
 
 
 async def rag_mcp(state: State, config) -> dict:
+    """사진 MCP가 끝난 뒤 실행: 증상 글 + PCB가 찾은 라벨로 과거 사례 검색."""
     codes = state["clues"]["errorCodes"]
-    out = await tools.call_rag_mcp(codes)
-    await emit(config, "TOOL_EXECUTED", {"tool": "search_manual", "toolVersion": "1", "agentType": "RAG",
-                                         "mcpServer": "rag-mcp(가짜)", "input": {"errorCodes": codes}, "output": out})
+    text = state["text"] + (f" 에러코드 {', '.join(codes)}" if codes else "")
+    pcb_labels = sorted({d["type"] for f in state.get("findings", []) if f["source"] == "PCB"
+                         for d in f["output"].get("defects", [])})
+    try:
+        out = await tools.call_rag_mcp(text, pcb_labels)
+    except Exception as e:  # RAG 서버 꺼짐 등. 검색 없이 진행
+        out = {"hits": [], "error": str(e)[:200]}
+    await emit(config, "TOOL_EXECUTED", {"tool": "retrieve_repair_context", "toolVersion": "1", "agentType": "RAG",
+                                         "mcpServer": "rag-mcp", "input": {"text": text, "pcbLabels": pcb_labels}, "output": out})
     return {"findings": [{"source": "RAG", "attachmentId": None, "found": False, "output": out}]}
 
 
@@ -133,7 +137,8 @@ async def report(state: State, config) -> dict:
                 e["attachmentId"] = f["attachmentId"]
             evidence.append(e)
         if f["source"] == "RAG":
-            evidence += [{"type": "MANUAL", **h} for h in f["output"]["hits"]]
+            evidence += [{"type": "MANUAL" if h["kind"] == "LABEL" else "CASE",
+                          **{k: v for k, v in h.items() if k != "kind"}} for h in f["output"]["hits"]]
     payload = {"summary": r.summary, "modelVersion": C.MODEL_VERSION, "repairMethod": r.repairMethod,
                "candidates": candidates, "recommendedParts": [], "evidence": evidence}
     # TODO: recommendedParts는 Spring DB에 있는 partId만 가능 → product_snapshot의 부품 목록에서 고른다
@@ -162,8 +167,9 @@ def build_graph():
     g.add_edge(START, "classify_photos")
     g.add_edge("classify_photos", "split_text")
     g.add_conditional_edges("split_text", pick_mcps, ["pcb_mcp", "mech_mcp", "rag_mcp"])  # 여기서 갈라져서 동시 실행
-    for mcp in ("pcb_mcp", "mech_mcp", "rag_mcp"):
-        g.add_edge(mcp, "judge")  # 다 끝나면 judge에서 합류
+    for mcp in ("pcb_mcp", "mech_mcp"):
+        g.add_edge(mcp, "rag_mcp")  # 사진 MCP가 다 끝나면 rag에서 합류 (PCB 라벨을 넘기려고)
+    g.add_edge("rag_mcp", "judge")
     g.add_conditional_edges("judge", lambda s: s["decision"], {"COMPLETE": "report", "PHOTO": "request_photo", "FAIL": "fail"})
     for end in ("report", "request_photo", "fail"):
         g.add_edge(end, END)

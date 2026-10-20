@@ -63,9 +63,20 @@ async def call_pcb_mcp(path: str) -> dict:
         return json.loads(r.content[0].text)  # 옛 mcp 1.x 서버라 결과가 글(JSON 문자열)로 온다
 
 
-async def call_rag_mcp(error_codes: list[str]) -> dict:
-    # TODO(RAG 담당): Rag_mcp가 생기면 여기서 매뉴얼 검색. 지금은 가짜 결과
-    return {"hits": [{"citation": f"MANUAL §{c}", "excerpt": f"에러 {c} 설명(가짜)"} for c in error_codes]}
+async def call_rag_mcp(text: str, pcb_labels: list[str]) -> dict:
+    """Rag_mcp(retrieve_repair_context): 증상 글 + PCB 라벨로 과거 수리 사례·라벨 정의를 찾는다.
+
+    찌그러짐 라벨은 보내지 않는다. RAG는 원본 자동차 라벨을 받아 "자동차라 대응 안 됨" 경고를 붙이는데,
+    그 경고가 GPT에 들어가면 결과를 무시해 버린다. 찌그러짐은 기계 MCP 결과로만 리포트에 넣는다.
+    """
+    request = {"raw_text": text, "origin": "technician", "technician_confirmed": True,
+               "pcb_labels": pcb_labels, "damage_labels": [], "top_k": 3}
+    async with Client(C.RAG_MCP_URL, timeout=60) as c:
+        d = (await c.call_tool("retrieve_repair_context", {"request": request})).structured_content
+    hits = [{"kind": "CASE", "citation": x["source_id"], "sourceUri": x["source_url"],
+             "excerpt": (x.get("korean_summary") or x.get("chunk_text") or "")[:300]} for x in d["repair_cases"]]
+    hits += [{"kind": "LABEL", "citation": x["document_id"], "excerpt": x["title"]} for x in d["label_definitions"]]
+    return {"hits": hits, "status": d["case_search_status"]}  # GPT·Spring에 보낼 만큼만 줄인다
 
 
 # ── 3. GPT ───────────────────────────────────────────────

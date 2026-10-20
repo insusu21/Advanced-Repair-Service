@@ -63,7 +63,8 @@ skeleton-agent/
 Kafka diagnosis.commands.v2  (Spring → 우리)
   → classify_photos   사진 받기(실패 시 예시 2장) + GPT로 PCB / MECH / OTHER 분류
   → split_text        GPT로 증상을 PCB / 기계 / SW 단서로 나눔
-  → pcb_mcp / mech_mcp / rag_mcp   필요한 것만 동시에
+  → pcb_mcp / mech_mcp   필요한 것만 동시에
+  → rag_mcp           증상 + PCB 라벨로 과거 사례 검색
   → judge             결함 찾음 → report
                       못 찾음 → request_photo (최대 3회)
                       3회 넘음 → fail
@@ -77,7 +78,7 @@ Kafka diagnosis.events.v2    (우리 → Spring)  +  worker/reports/*.md
 
 `detect_dents`는 자동차 외판 모델(`vineetsarpal/yolov11n-car-damage`)을 쓴다. 원래 결함 이름이 `front-bumper-dent` 같은 자동차 부위라
 GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakage`로 바꿔 내보낸다. 로봇청소기용 모델이 생기면 `DENT_REPO`, `DENT_FILE`만 바꾼다.
-| rag | 가짜. `worker/tools.py`의 `call_rag_mcp` 채우기 |
+| rag ([Rag_mcp 레포](https://github.com/skala-ai-agent-team6/Rag_mcp), 8014) | 실제. 증상 글 + PCB 라벨로 과거 수리 사례·라벨 정의 검색. 꺼져 있으면 검색 없이 진행. 찌그러짐 라벨은 보내지 않음 |
 
 ## Spring과 붙일 때
 
@@ -90,7 +91,6 @@ GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakag
 | 담당 | 할 일 | 위치 |
 |---|---|---|
 | 오케스트레이션 | 판단을 GPT로, 다시 찍을 부위·설명을 GPT로 | `graph.py` `decide`, `request_photo` |
-| RAG | 실제 매뉴얼 검색 | `tools.py` `call_rag_mcp` |
 | PCB | stdio → HTTP 서버로 (속도) | `tools.py` `call_pcb_mcp` |
 | 하네스 | 처리 기록을 DB로, 재시도 중복 이벤트 정리 | `main.py` `done`, `handle` |
 | 오케스트레이션 + Spring | 추천 부품 partId | `graph.py` `report` |
