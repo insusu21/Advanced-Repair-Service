@@ -17,13 +17,22 @@ export class ApiError extends Error {
 
 export const TOKEN_KEY = 'robotcare-token'
 
+/** 새 탭에서도 로그인이 유지되도록 localStorage 에서 읽는다. 저장소 사용 불가 시 null */
+export function readToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
 export const http = axios.create({
   baseURL: API_BASE,
   timeout: 15_000,
 })
 
 http.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem(TOKEN_KEY)
+  const token = readToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })

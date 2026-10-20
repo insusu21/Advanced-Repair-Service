@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /* 같은 시리얼 번호로 접수된 다른 수리 건. 재입고 제품은 시리얼이 겹치므로 수리 ID 로 구분해 보여준다. */
 import { computed, ref, watch } from 'vue'
-import { History, Info } from 'lucide-vue-next'
+import { ExternalLink, History, Info } from 'lucide-vue-next'
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
 import { repairApi } from '@/api'
 import type { Repair } from '@/types'
 import { formatDate, repairId } from '@/utils/format'
 
-const props = defineProps<{ serial: string; excludeId?: number; compact?: boolean }>()
+const props = defineProps<{ serial: string; excludeId?: number; compact?: boolean; newTab?: boolean }>()
 
 const items = ref<Repair[]>([])
 const loading = ref(false)
@@ -44,7 +44,11 @@ const others = computed(() =>
     <p class="faint note"><Info :size="14" /> 시리얼 번호는 재접수 시 겹칠 수 있어, 수리 건은 수리 ID로 따로 구분됩니다.</p>
     <ul class="list">
       <li v-for="r in others" :key="r.id">
-        <RouterLink :to="`/repairs/${r.id}/diagnosis`" class="mono rid">{{ repairId(r.id) }}</RouterLink>
+        <!-- 접수 작성 중에는 입력 내용을 잃지 않도록 새 탭으로 연다 -->
+        <a v-if="newTab" :href="`/repairs/${r.id}/diagnosis`" target="_blank" rel="noopener" class="mono rid" :aria-label="`수리 ID ${repairId(r.id)} (새 탭에서 열기)`">
+          {{ repairId(r.id) }} <ExternalLink :size="14" aria-hidden="true" />
+        </a>
+        <RouterLink v-else :to="`/repairs/${r.id}/diagnosis`" class="mono rid">{{ repairId(r.id) }}</RouterLink>
         <span class="faint nowrap">{{ formatDate(r.receivedAt) }}</span>
         <span class="sym" :title="r.symptom">{{ r.symptom }}</span>
         <RepairStatusBadge :status="r.status" :failed="!!r.analysisError" />
@@ -89,6 +93,9 @@ const others = computed(() =>
   padding: 6px 0;
 }
 .rid {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 700;
   color: var(--navy-700);
 }

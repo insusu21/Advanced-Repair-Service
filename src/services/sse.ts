@@ -5,7 +5,7 @@
  * - Mock: 브라우저 내부 이벤트 버스 구독
  * 화면은 이 모듈만 사용하므로 Mock ↔ 실서버 전환 시 화면 코드 변경이 없다.
  * ========================================================================= */
-import { API_BASE, TOKEN_KEY, USE_MOCK } from '@/api/http'
+import { API_BASE, readToken, USE_MOCK } from '@/api/http'
 import { on } from '@/mocks/db'
 import type { RepairEvent } from '@/types'
 
@@ -42,7 +42,7 @@ export function connectRepairEvents(repairId: number, h: SseHandlers): SseConnec
   let timer: number | undefined
 
   const open = () => {
-    const token = sessionStorage.getItem(TOKEN_KEY) ?? ''
+    const token = readToken() ?? ''
     h.onState?.(retry === 0 ? 'connecting' : 'reconnecting')
     es = new EventSource(`${API_BASE}/repairs/${repairId}/events?token=${encodeURIComponent(token)}`)
     es.onopen = () => {
@@ -90,7 +90,7 @@ export function connectAllEvents(onEvent: (e: RepairEvent) => void): SseConnecti
     const off = on('*', onEvent)
     return { close: off }
   }
-  const token = sessionStorage.getItem(TOKEN_KEY) ?? ''
+  const token = readToken() ?? ''
   const es = new EventSource(`${API_BASE}/repairs/events?token=${encodeURIComponent(token)}`)
   es.onmessage = (m) => {
     try {

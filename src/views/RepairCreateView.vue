@@ -206,7 +206,7 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <div><dt>펌웨어</dt><dd>{{ form.product.firmware }}</dd></div>
         </dl>
       </div>
-      <SameSerialHistory v-if="form.product" :serial="form.product.serialNumber" compact />
+      <SameSerialHistory v-if="form.product" :serial="form.product.serialNumber" compact new-tab />
     </section>
 
     <!-- ========== 2단계 ========== -->
