@@ -64,7 +64,7 @@ function fill(id: string) {
         <li><span>4</span>부품 조회 · 발주</li>
         <li><span>5</span>수리 완료 · 본사 승인</li>
       </ol>
-      <p class="rule">AI가 만든 결과는 모두 <b>초안</b>입니다. 사람이 확인·승인한 내용만 고장 데이터베이스에 반영됩니다.</p>
+      <p class="rule">AI가 만든 결과는 모두 <b>초안</b>입니다. 관리자가 확인·승인한 내용만 고장 데이터베이스에 반영됩니다.</p>
     </section>
 
     <section class="panel">

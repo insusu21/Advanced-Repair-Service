@@ -12,7 +12,7 @@ const list = computed(() => (props.newestFirst ? [...props.records].reverse() : 
 const ACTION: Record<ApprovalAction, { label: string; icon: unknown; tone: string }> = {
   CREATED: { label: '접수', icon: FilePlus, tone: 'info' },
   AI_GENERATED: { label: 'AI 초안 생성', icon: Sparkles, tone: 'ai' },
-  CONFIRMED: { label: '사람 확인', icon: UserCheck, tone: 'success' },
+  CONFIRMED: { label: '관리자 확인', icon: UserCheck, tone: 'success' },
   APPROVED: { label: '승인', icon: UserCheck, tone: 'success' },
   REJECTED: { label: '반려', icon: UserX, tone: 'danger' },
   CHANGE_REQUESTED: { label: '수정 요청', icon: MessageSquare, tone: 'warning' },

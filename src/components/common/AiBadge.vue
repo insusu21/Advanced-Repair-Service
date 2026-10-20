@@ -8,11 +8,11 @@ withDefaults(defineProps<{ kind?: 'ai' | 'human'; label?: string; compact?: bool
 <template>
   <span v-if="kind === 'ai'" class="badge tone-ai ai-badge" role="note">
     <Sparkles :size="15" aria-hidden="true" />
-    {{ label ?? (compact ? 'AI 초안' : 'AI 생성 결과 · 사람의 확인 필요') }}
+    {{ label ?? (compact ? 'AI 초안' : 'AI 분석 결과 · 확인 필요') }}
   </span>
   <span v-else class="badge tone-success" role="note">
     <UserCheck :size="15" aria-hidden="true" />
-    {{ label ?? '사람 확정' }}
+    {{ label ?? '관리자 확정' }}
   </span>
 </template>
 

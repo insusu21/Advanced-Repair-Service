@@ -53,7 +53,7 @@ const items = computed(() => {
       </RouterLink>
     </nav>
     <div class="foot">
-      <p>AI 결과는 초안입니다.<br />사람이 승인한 내용만 확정됩니다.</p>
+      <p>AI 결과는 초안입니다.<br />관리자가 승인한 내용만 확정됩니다.</p>
     </div>
   </aside>
 </template>

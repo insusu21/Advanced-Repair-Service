@@ -102,7 +102,7 @@ const btnClass = (v: ApprovalAction['variant']) => ({ success: 'btn-success', da
         <div>
           <p class="lbl">데이터 출처</p>
           <DataSourceList :sources="sources" :ids="sourceIds" />
-          <p v-if="!sources.length" class="faint">출처 없음 (사람 입력)</p>
+          <p v-if="!sources.length" class="faint">출처 없음 (직접 입력)</p>
         </div>
       </div>
 

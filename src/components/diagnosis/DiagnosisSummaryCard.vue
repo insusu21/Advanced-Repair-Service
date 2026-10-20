@@ -52,7 +52,7 @@ const decIcon = computed(() => (dec.value.state === 'APPROVED' ? UserCheck : dec
         </dl>
         <p v-if="dec.comment" class="cm">“{{ dec.comment }}”</p>
       </template>
-      <p v-else class="muted">아직 사람이 확인하지 않은 AI 초안입니다. 아래 내용을 검토한 뒤 처리해 주세요.</p>
+      <p v-else class="muted">아직 관리자가 확인하지 않은 AI 초안입니다. 아래 내용을 검토한 뒤 처리해 주세요.</p>
     </div>
   </section>
 </template>

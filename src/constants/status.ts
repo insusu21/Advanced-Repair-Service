@@ -98,8 +98,8 @@ export const ORDER_STATUS_META: Record<OrderStatus, { label: string; tone: Tone 
 }
 
 export const DECISION_META: Record<DecisionState, { label: string; tone: Tone }> = {
-  PENDING: { label: '사람 확인 대기', tone: 'warning' },
-  APPROVED: { label: '사람 확인 완료', tone: 'success' },
+  PENDING: { label: '관리자 확인 대기', tone: 'warning' },
+  APPROVED: { label: '관리자 확인 완료', tone: 'success' },
   REJECTED: { label: '반려됨', tone: 'danger' },
   CHANGE_REQUESTED: { label: '수정 요청됨', tone: 'warning' },
   REANALYSIS_REQUESTED: { label: '재분석 요청됨', tone: 'info' },
