@@ -42,6 +42,7 @@ const URGENCIES: Urgency[] = ['HIGH', 'MEDIUM', 'LOW']
 function userInput(r: BeRepair) {
   const u = r.user_input ?? {}
   const urgency = URGENCIES.includes(u.urgency as Urgency) ? (u.urgency as Urgency) : 'MEDIUM'
+  // [통합] 이름을 MOTOR로 바꾸기 전에 저장된 접수의 'MECHANICAL'도 읽히게
   const photoKinds = Array.isArray(u.photoKinds) ? (u.photoKinds as string[]).map((k) => (k === 'MECHANICAL' ? 'MOTOR' : k)) : []
   return { urgency, technicianNote: str(u.technicianNote) ?? str(u.customerDescription), photoKinds }
 }
@@ -59,7 +60,8 @@ export function toStages(task: BeTask | undefined): { stages: AnalysisStageState
     { stage: 'SYNTHESIS', state: s },
   ]
   if (!task) return { stages: st('PENDING', 'PENDING', 'PENDING'), progress: 0 }
-  const synth = /SYNTH|SUMMAR|AGGREG|FINAL/i.test(task.stage ?? '')
+  // [통합] 에이전트 단계 JUDGING(판단)도 '결과 종합'으로 표시. 사진 분류·소견 분리·부위 분석·사례 검색은 '분석 진행'
+  const synth = /SYNTH|SUMMAR|AGGREG|FINAL|JUDG/i.test(task.stage ?? '')
   switch (task.status) {
     case 'QUEUED':
       return { stages: st('RUNNING', 'PENDING', 'PENDING'), progress: 5 }

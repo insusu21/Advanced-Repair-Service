@@ -35,6 +35,7 @@ export type RepairStatus =
   | 'CANCELLED'
 
 /** 접수 사진은 PCB · MOTOR(모터·외관 변형 등) 2종 */
+// [통합] MECHANICAL → MOTOR: 백엔드 DB(attachment.target)·에이전트가 MOTOR를 쓴다
 export type PhotoKind = 'PCB' | 'MOTOR' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
 
 export interface RepairImage {

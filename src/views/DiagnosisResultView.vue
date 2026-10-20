@@ -4,13 +4,12 @@
  *  상단: 한눈에 보기(원인·AI 판단 점수·긴급도·승인 상태·권장 조치·필요 부품·판단 근거) + 처리 버튼
  *  세부: 접이식 섹션 — 원인 후보 · 부위별 분석 · 사진 이상 영역 · 에러코드 · 점검/수리 방법·부품 ·
  *        유사 사례 · 데이터 출처 · 처리 이력 (명세서 항목이라 삭제하지 않고 접어 둔다)
- *  처리: 진단 내용 확인 / 추가 분석 요청 / 진단 반려 + 더 보기(수정 의견 작성 / 본사 검토 요청)
+ *  처리: 진단 내용 확인 / 본사 검토 요청 / 진단 반려
  * ========================================================================= */
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watchEffect } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watchEffect } from 'vue'
 import {
-  CircleCheck, MessageSquarePlus, RotateCw, Building2, CircleX, FileCode2, History, ClipboardList,
-  Package, ArrowRight, BookOpen, Layers, ListOrdered, ScanSearch, Cpu, ChevronDown, Lock, ChevronsDownUp, ChevronsUpDown, MoreHorizontal,
+  CircleCheck, RotateCw, Building2, CircleX, FileCode2, History, ClipboardList,
+  Package, ArrowRight, BookOpen, Layers, ListOrdered, ScanSearch, Cpu, Lock, ChevronsDownUp, ChevronsUpDown,
 } from 'lucide-vue-next'
 import RepairFlowNav from '@/components/repair/RepairFlowNav.vue'
 import RepairSummaryCard from '@/components/repair/RepairSummaryCard.vue'
@@ -39,7 +38,6 @@ const { store, repair, diagnosis, versions, loading, diagLoading, error, submitt
 const auth = useAuthStore()
 const toast = useToastStore()
 const orders = useOrderStore()
-const router = useRouter()
 const showAllCases = ref(false)
 
 // 브라우저 탭에서도 시리얼이 아닌 수리 ID 로 구분되도록
@@ -72,27 +70,25 @@ const disabledReason = computed(() => {
 const pending = computed(() => diagnosis.value?.technicianDecision.state === 'PENDING')
 
 /* ---------- 처리 버튼 · 사유 모달 ---------- */
-type ActionKey = 'approve' | 'comment' | 'reanalyze' | 'hq' | 'reject'
+// [통합] '수정 의견 작성'(상태 변화 없음)·'추가 분석 요청'(재진단 API 없음) 버튼 삭제.
+//        남은 3개는 모두 바로 보이게 두고 '더 보기' 메뉴는 없앰
+type ActionKey = 'approve' | 'hq' | 'reject'
 const ACTIONS: Record<ActionKey, { label: string; icon: unknown; btn: string; needsReason: boolean; reasonLabel: string; hint: string; placeholder: string }> = {
   approve: { label: '진단 내용 확인', icon: CircleCheck, btn: 'btn-success', needsReason: false, reasonLabel: '확인 메모 (선택)', hint: '이 진단을 기준으로 점검·수리를 진행합니다.', placeholder: '예) 하단 연결부 들뜸 육안 확인' },
-  reanalyze: { label: '추가 분석 요청', icon: RotateCw, btn: 'btn-ai', needsReason: true, reasonLabel: '추가 분석 요청 사유', hint: 'AI 가 다시 분석합니다. 진행 화면으로 이동합니다.', placeholder: '예) PCB 사진을 다시 찍어 올렸습니다. 전원부 위주로 확인 부탁드립니다.' },
-  reject: { label: '진단 반려', icon: CircleX, btn: 'btn-danger', needsReason: true, reasonLabel: '반려 사유', hint: 'AI 진단을 쓰지 않고 직접 점검합니다.', placeholder: '예) 실제 점검 결과 모터는 정상, 배터리 커넥터 산화 확인' },
-  comment: { label: '수정 의견 작성', icon: MessageSquarePlus, btn: '', needsReason: true, reasonLabel: '수정 의견', hint: '상태는 그대로 두고 의견만 이력에 남깁니다.', placeholder: '예) 2순위 원인도 함께 점검 필요' },
   hq: { label: '본사 검토 요청', icon: Building2, btn: '', needsReason: true, reasonLabel: '본사 검토 요청 사유', hint: '본사 품질 담당자가 직접 진단합니다.', placeholder: '예) 사진으로 판단이 어려워 본사 확인이 필요합니다.' },
+  reject: { label: '진단 반려', icon: CircleX, btn: 'btn-danger', needsReason: true, reasonLabel: '반려 사유', hint: 'AI 진단을 쓰지 않고 직접 점검합니다.', placeholder: '예) 실제 점검 결과 모터는 정상, 배터리 커넥터 산화 확인' },
 }
-const PRIMARY: ActionKey[] = ['approve', 'reanalyze', 'reject']
-const MORE: ActionKey[] = ['comment', 'hq']
+const PRIMARY: ActionKey[] = ['approve', 'hq', 'reject']
 
 const dlg = reactive({ open: false, key: 'approve' as ActionKey, text: '', error: '' })
 function openAction(key: ActionKey) {
-  moreOpen.value = false
   Object.assign(dlg, { open: true, key, text: '', error: '' })
 }
 async function confirmAction() {
   const a = ACTIONS[dlg.key]
   const comment = dlg.text.trim()
   if (a.needsReason && comment.length < 2) {
-    dlg.error = dlg.key === 'comment' ? '수정 의견을 입력해 주세요.' : '사유를 입력해 주세요.'
+    dlg.error = '사유를 입력해 주세요.'
     return
   }
   try {
@@ -100,15 +96,6 @@ async function confirmAction() {
       case 'approve':
         await store.decide({ target: 'DIAGNOSIS', action: 'APPROVE', comment, diagnosisVersion: diagnosis.value?.version })
         toast.success('진단 내용을 확인했습니다. 필요 부품을 확인해 주세요.')
-        break
-      case 'comment':
-        await store.decide({ target: 'DIAGNOSIS', action: 'COMMENT', comment })
-        toast.info('수정 의견을 이력에 남겼습니다.')
-        break
-      case 'reanalyze':
-        await store.requestReanalysis({ reason: comment })
-        toast.info('추가 분석을 요청했습니다. 진행 화면으로 이동합니다.')
-        void router.push(`/repairs/${repair.value!.id}/progress`)
         break
       case 'hq':
         await store.decide({ target: 'DIAGNOSIS', action: 'REQUEST_HQ_REVIEW', comment })
@@ -125,24 +112,7 @@ async function confirmAction() {
   }
 }
 
-/* 더 보기 메뉴 (바깥 클릭·Esc 로 닫힘) */
-const moreOpen = ref(false)
-const moreEl = ref<HTMLElement | null>(null)
-function onDocClick(e: MouseEvent) {
-  if (moreOpen.value && moreEl.value && !moreEl.value.contains(e.target as Node)) moreOpen.value = false
-}
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') moreOpen.value = false
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick)
-  document.addEventListener('keydown', onKey)
-  void orders.fetchParts()
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick)
-  document.removeEventListener('keydown', onKey)
-})
+onMounted(() => void orders.fetchParts())
 
 /* ---------- 요약 데이터 ---------- */
 const agentOrder = { MOTOR: 0, PCB: 1 }
@@ -235,19 +205,6 @@ const summaries = computed(() => {
             <button v-for="k in PRIMARY" :key="k" type="button" class="btn btn-lg" :class="ACTIONS[k].btn" :disabled="submitting" @click="openAction(k)">
               <component :is="ACTIONS[k].icon" :size="20" /> {{ ACTIONS[k].label }}
             </button>
-            <div ref="moreEl" class="more">
-              <button type="button" class="btn btn-lg" :aria-expanded="moreOpen" aria-haspopup="menu" aria-controls="more-menu" :disabled="submitting" @click.stop="moreOpen = !moreOpen">
-                <MoreHorizontal :size="20" /> 더 보기 <ChevronDown :size="16" />
-              </button>
-              <ul v-if="moreOpen" id="more-menu" class="menu card" role="menu">
-                <li v-for="k in MORE" :key="k" role="none">
-                  <button type="button" role="menuitem" class="mi" @click="openAction(k)">
-                    <component :is="ACTIONS[k].icon" :size="18" />
-                    <span><strong>{{ ACTIONS[k].label }}</strong><small>{{ ACTIONS[k].hint }}</small></span>
-                  </button>
-                </li>
-              </ul>
-            </div>
           </template>
           <p v-else class="locked"><Lock :size="18" /> {{ disabledReason }}</p>
         </div>
@@ -417,44 +374,6 @@ const summaries = computed(() => {
   color: var(--text-2);
   font-weight: 600;
 }
-.more {
-  position: relative;
-  margin-left: auto;
-}
-.menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  list-style: none;
-  margin: 0;
-  padding: 6px;
-  min-width: 300px;
-  box-shadow: var(--shadow-lg);
-}
-.mi {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 0;
-  background: none;
-  text-align: left;
-  border-radius: var(--radius);
-  cursor: pointer;
-  color: var(--text);
-}
-.mi:hover,
-.mi:focus-visible {
-  background: var(--navy-50);
-}
-.mi span {
-  display: grid;
-}
-.mi small {
-  color: var(--text-3);
-}
 .details-head {
   margin-top: 4px;
 }
@@ -556,27 +475,10 @@ const summaries = computed(() => {
   border-radius: var(--radius);
   background: var(--ai-bg);
 }
-/* 태블릿 이하: 버튼이 줄바꿈되며 더 보기 메뉴는 왼쪽 정렬 */
-@media (max-width: 1024px) {
-  .more {
-    margin-left: 0;
-  }
-  .menu {
-    left: 0;
-    right: auto;
-  }
-}
 @media (max-width: 640px) {
   .actions .btn {
     flex: 1 1 100%;
     justify-content: center;
-  }
-  .more {
-    flex: 1 1 100%;
-  }
-  .menu {
-    min-width: 0;
-    width: 100%;
   }
 }
 </style>

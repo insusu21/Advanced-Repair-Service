@@ -233,7 +233,9 @@ export const repairApi = {
   /** [Mock 전용] 진단 확인·반려·본사 검토 요청·수동 진단 회신 */
   async approval(id: number, req: ApprovalRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.approval(id, req), 500)
-    throw notSupported('진단 확인·반려·본사 검토 처리')
+    // [통합] 백엔드에 같은 경로·본문으로 추가함 (target, action, comment). 확인·반려 → REPAIRING, 본사 검토 → MANUAL_REVIEW
+    await http.post(`/repairs/${id}/approval`, { target: req.target, action: req.action, comment: req.comment })
+    return realGet(id, true)
   },
 
   /** [Mock 전용] 추가 분석(재진단) 요청 */

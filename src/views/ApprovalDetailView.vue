@@ -3,7 +3,7 @@
  * (수리 결과 본사 승인은 폐지: 기사가 리포트를 확정하면 바로 고장 DB 에 반영된다) */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { RotateCw, Send, History, Images, Hand, ArrowLeft } from 'lucide-vue-next'
+import { Send, History, Images, Hand, ArrowLeft } from 'lucide-vue-next'
 import RepairSummaryCard from '@/components/repair/RepairSummaryCard.vue'
 import HumanApprovalCard from '@/components/diagnosis/HumanApprovalCard.vue'
 import ApprovalHistoryTimeline from '@/components/review/ApprovalHistoryTimeline.vue'
@@ -24,7 +24,7 @@ const isManual = computed(() => repair.value?.status === 'MANUAL_REVIEW')
 
 const MANUAL_ACTIONS: ApprovalAction[] = [
   { key: 'return', label: '수동 진단 회신 (기사에게)', variant: 'primary', icon: Send, requiresComment: true },
-  { key: 'reanalyze', label: '재분석 요청', variant: 'ai', icon: RotateCw, requiresComment: true },
+  // [통합] '재분석 요청' 버튼 삭제 (재진단 API 없음)
 ]
 
 const suggestion = computed(() =>
