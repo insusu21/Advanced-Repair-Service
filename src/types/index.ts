@@ -8,10 +8,15 @@
 export type Role = 'TECHNICIAN' | 'QUALITY_MANAGER'
 
 export interface User {
+  /** 로그인 식별자 — Mock: 사번, 실서버: 이메일 */
   employeeId: string
   name: string
   role: Role
-  branch: string // 소속 (서비스센터 지점 / 본사 / 부품팀)
+  branch: string // 소속 (서비스센터 / 본사)
+  /** 실서버 GET /api/auth/me 값 (bigint 십진수 문자열) */
+  id?: string
+  email?: string
+  centerId?: string | null
 }
 
 export type RepairStatus =

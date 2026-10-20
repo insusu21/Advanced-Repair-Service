@@ -20,8 +20,12 @@ const DEMO: { id: string; role: Role; label: string; desc: string; icon: unknown
   { id: 'Q2001', role: 'QUALITY_MANAGER', label: '본사 품질 담당자', desc: '발주 승인 · 고장 통계', icon: Building2 },
 ]
 
+/** 로그인 식별자: Mock 은 데모 사번, 실서버는 이메일(app_user.email) */
+const idLabel = USE_MOCK ? '사번' : '이메일'
+
 function validate() {
-  errors.employeeId = form.employeeId.trim() ? undefined : '사번을 입력해 주세요.'
+  const v = form.employeeId.trim()
+  errors.employeeId = !v ? `${idLabel}을 입력해 주세요.` : !USE_MOCK && !/^\S+@\S+\.\S+$/.test(v) ? '이메일 형식이 올바르지 않습니다.' : undefined
   errors.password = form.password ? undefined : '비밀번호를 입력해 주세요.'
   return !errors.employeeId && !errors.password
 }
@@ -69,13 +73,22 @@ function fill(id: string) {
     <section class="panel">
       <form class="card form" novalidate @submit.prevent="submit">
         <h2>로그인</h2>
-        <p class="muted">사번과 비밀번호를 입력하세요. 역할에 맞는 화면으로 이동합니다.</p>
+        <p class="muted">{{ idLabel }}과 비밀번호를 입력하세요. 역할에 맞는 화면으로 이동합니다.</p>
 
         <div v-if="error" class="callout tone-danger" role="alert"><CircleAlert :size="20" /> {{ error }}</div>
 
         <div class="field">
-          <label for="eid" class="req">사번</label>
-          <input id="eid" v-model="form.employeeId" class="input" :class="{ invalid: errors.employeeId }" autocomplete="username" placeholder="예) T1001" :aria-invalid="!!errors.employeeId" />
+          <label for="eid" class="req">{{ idLabel }}</label>
+          <input
+            id="eid"
+            v-model="form.employeeId"
+            class="input"
+            :class="{ invalid: errors.employeeId }"
+            :type="USE_MOCK ? 'text' : 'email'"
+            autocomplete="username"
+            :placeholder="USE_MOCK ? '예) T1001' : '예) tech@robotcare.co.kr'"
+            :aria-invalid="!!errors.employeeId"
+          />
           <p v-if="errors.employeeId" class="error-text">{{ errors.employeeId }}</p>
         </div>
         <div class="field">

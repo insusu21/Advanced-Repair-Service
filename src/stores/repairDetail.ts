@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { repairApi, toErrorMessage } from '@/api'
-import { connectRepairEvents, type SseConnection, type SseState } from '@/services/sse'
+import { connectRepairEvents, type RepairEventName, type SseConnection, type SseState } from '@/services/sse'
 import type { Diagnosis, PhotoRequest, Repair, RepairEvent } from '@/types'
 import type { AdditionalInfoRequest, ApprovalRequest, ReanalysisRequest, SaveReportDraftRequest, UploadImageRequest } from '@/types/api'
 
@@ -84,14 +84,31 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
     }
   }
 
+  /* 실서버 SSE: payload 는 쓰지 않고 상세를 다시 조회. 연달아 오는 이벤트는 300ms 모아서 한 번만 조회 */
+  const DIAGNOSIS_EVENTS: RepairEventName[] = ['DIAGNOSIS_COMPLETED', 'DIAGNOSIS_FAILED', 'DIAGNOSIS_RESUMED']
+  let refetchTimer: number | undefined
+  let refetchDiagnosis = false
+  function onServerChange(id: number, name: RepairEventName) {
+    if (DIAGNOSIS_EVENTS.includes(name)) refetchDiagnosis = true
+    window.clearTimeout(refetchTimer)
+    refetchTimer = window.setTimeout(async () => {
+      const withDiag = refetchDiagnosis
+      refetchDiagnosis = false
+      await load(id)
+      if (withDiag) await loadDiagnosis(id)
+    }, 300)
+  }
+
   function subscribe(id: number) {
     unsubscribe()
     conn = connectRepairEvents(id, {
       onEvent: applyEvent,
+      onChange: (name) => onServerChange(id, name),
       onState: (s) => (sseState.value = s),
     })
   }
   function unsubscribe() {
+    window.clearTimeout(refetchTimer)
     conn?.close()
     conn = null
   }

@@ -44,8 +44,10 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  // 실서버: 첫 이동 전에 GET /api/auth/me 로 세션 복원 (Mock 은 즉시 완료)
+  await auth.init()
   if (to.meta.public) return auth.isLoggedIn && to.name === 'login' ? { name: 'home' } : true
   if (!auth.isLoggedIn) return { name: 'login', query: { redirect: to.fullPath } }
   if (to.meta.roles && !auth.hasRole(...to.meta.roles)) return { name: 'forbidden' }
@@ -56,8 +58,11 @@ router.afterEach((to) => {
   document.title = `${to.meta.title ?? ''} · RobotCare AI`
 })
 
+// 세션 만료(401): 서버 로그아웃 호출 없이 로컬 상태만 비우고 로그인 화면으로
 window.addEventListener('auth:expired', () => {
-  void useAuthStore().logout().then(() => router.push({ name: 'login' }))
+  useAuthStore().clear()
+  const cur = router.currentRoute.value
+  if (cur.name !== 'login') void router.push({ name: 'login', query: { redirect: cur.fullPath } })
 })
 
 export default router

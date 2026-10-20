@@ -1,11 +1,12 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 백엔드가 준비되면 .env.development 의 VITE_USE_MOCK=false 로 바꾸고
-// VITE_API_PROXY_TARGET 에 백엔드 주소를 넣으면 /api 요청이 프록시됩니다.
+// 실서버 연결: .env.development 의 VITE_USE_MOCK=false, VITE_API_PROXY_TARGET 에 백엔드 주소.
+// 브라우저는 같은 origin(/api)으로 요청하고 Vite 가 백엔드로 프록시하므로 세션 쿠키·CSRF 가 그대로 동작한다.
 export default defineConfig(({ mode }) => {
-  const target = process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080'
+  const env = loadEnv(mode, process.cwd(), '')
+  const target = env.VITE_API_PROXY_TARGET || 'http://localhost:8080'
   return {
     plugins: [vue()],
     resolve: {
@@ -14,7 +15,8 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/api': { target, changeOrigin: true },
+        // changeOrigin 은 끔: 백엔드 CORS·쿠키가 브라우저 origin(FRONTEND_ORIGIN) 기준으로 동작하도록 Host 를 유지
+        '/api': { target, changeOrigin: false },
       },
     },
     build: {

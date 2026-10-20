@@ -54,18 +54,32 @@ VS Code 가 권장 확장(**Vue - Official**)을 설치하라고 안내하면 �
 
 ## 실제 백엔드 연결
 
+백엔드 계약: [skala-ai-agent-team6/backend docs/API.md](https://github.com/skala-ai-agent-team6/backend/blob/main/docs/API.md) · [openapi.json](https://github.com/skala-ai-agent-team6/backend/blob/main/docs/openapi.json)
+
 `.env.development`
 
 ```env
 VITE_USE_MOCK=false
-VITE_API_BASE_URL=/api
+VITE_API_BASE_URL=                              # 비워 둠: 브라우저는 같은 origin 의 /api 로 요청
+VITE_API_PROXY_TARGET=http://localhost:8080     # Vite 가 /api 를 넘길 백엔드 주소
 ```
 
 ```bash
-VITE_API_PROXY_TARGET=http://localhost:8080 npm run dev   # /api 를 백엔드로 프록시
+npm run dev    # http://localhost:5173 → /api 는 localhost:8080 으로 프록시
 ```
 
-화면·스토어 코드는 바꿀 필요가 없습니다. `src/api/*.ts` 가 Mock/실서버를 분기하고, `src/services/sse.ts` 가 Mock 이벤트 버스와 `EventSource` 를 같은 인터페이스로 감쌉니다. API 계약과 SSE 이벤트 형식은 `docs/DESIGN.md` 7장과 `src/types` 를 기준으로 맞추면 됩니다.
+> ⚠️ **localhost 와 127.0.0.1 을 섞어 쓰지 마세요.** 브라우저는 둘을 다른 사이트로 보기 때문에
+> `http://127.0.0.1:5173` 으로 열면 `localhost` 에 발급된 세션 쿠키가 전달되지 않아 로그인이 계속 풀리거나 403(CSRF)이 납니다.
+> 프론트 주소, `VITE_API_PROXY_TARGET`, 백엔드의 `FRONTEND_ORIGIN` 을 모두 같은 호스트 이름(예: `localhost`)으로 맞추세요.
+
+- **인증**: 세션 쿠키(JSESSIONID, HttpOnly) + CSRF. 토큰을 브라우저 저장소에 두지 않습니다.
+  로그인 = `GET /api/auth/csrf` → `POST /api/auth/login`(form: username=이메일, password) → CSRF 재조회 → `GET /api/auth/me`.
+  앱을 열면 `/api/auth/me` 로 세션을 복원하고, 401 이면 로그인 화면으로 이동합니다.
+- **CSRF**: 메모리에 보관하고 POST/PUT/PATCH/DELETE 에 자동 첨부(`src/api/http.ts`). 403 `FORBIDDEN_OR_CSRF` 를 받으면 한 번 재조회 후 재시도합니다.
+- **오류**: 백엔드 `{ code, status }` 를 `src/constants/errors.ts` 의 한국어 문구로 바꿔 보여 줍니다.
+- **SSE**: `EventSource('/api/repairs/{id}/events', { withCredentials: true })`. 이름 있는 이벤트만 구독하고, payload 대신 상세를 다시 조회합니다. 재연결은 브라우저 기본(Last-Event-ID)에 맡깁니다.
+
+화면·스토어 코드는 `src/api/*.ts` 와 `src/services/sse.ts` 에서 Mock/실서버를 분기합니다.
 
 ---
 
@@ -81,9 +95,9 @@ robotcare-ai/
 │  ├─ App.vue
 │  ├─ router/index.ts           경로·역할 가드·지연 로딩
 │  ├─ types/                    도메인 타입(index) · API DTO(api) · 업로드 · 승인 액션
-│  ├─ constants/status.ts       상태·단계·역할·긴급도 메타 (라벨+아이콘+톤)
-│  ├─ api/                      http(axios·오류 정규화) · repairs · parts · dashboard · auth
-│  ├─ services/sse.ts           SSE 연결 (재연결·백오프, Mock 겸용)
+│  ├─ constants/                status.ts 상태·단계·역할 메타 · errors.ts 백엔드 오류 코드 문구
+│  ├─ api/                      http(axios·세션 쿠키·CSRF·오류 정규화) · repairs · parts · dashboard · auth
+│  ├─ services/sse.ts           SSE 연결 (named event → 상세 재조회, Mock 겸용)
 │  ├─ stores/                   auth · repairs(목록) · repairDetail · orders · dashboard · notifications · toast
 │  ├─ composables/              useRepairPage · useReasonDialog
 │  ├─ mocks/                    data(시드) · db(영속·이벤트 버스) · engine(AI 파이프라인) · handlers(REST)

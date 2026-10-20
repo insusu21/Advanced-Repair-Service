@@ -1,13 +1,26 @@
 /* REST 요청/응답 DTO */
 import type { PhotoKind, ProductInfo, ReportContent, Role, Urgency, User } from './index'
 
+/** Mock: username = 사번 / 실서버: username = 이메일 (form-urlencoded) */
 export interface LoginRequest {
-  employeeId: string
+  username: string
   password: string
 }
+/** Mock 전용 로그인 응답 (실서버는 세션 쿠키 + GET /api/auth/me) */
 export interface LoginResponse {
   token: string
   user: User
+}
+
+/** GET /api/auth/me */
+export interface MeResponse {
+  id: string
+  username?: string
+  email: string
+  name: string
+  active: boolean
+  role: Role
+  centerId: string | null
 }
 
 /** POST /api/repairs */

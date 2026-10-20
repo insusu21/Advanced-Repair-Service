@@ -72,7 +72,7 @@ function toImage(req: UploadImageRequest): RepairImage {
 
 /* ---------------- 인증 ---------------- */
 export function login(req: LoginRequest): LoginResponse {
-  const u = USERS.find((x) => x.employeeId === req.employeeId.trim().toUpperCase())
+  const u = USERS.find((x) => x.employeeId === req.username.trim().toUpperCase())
   if (!u || u.password !== req.password) throw new ApiError(401, '사번 또는 비밀번호가 올바르지 않습니다.')
   const { password: _pw, ...user } = u
   void _pw
