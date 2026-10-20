@@ -36,6 +36,8 @@ def save(command: dict, result: dict) -> Path:
                 found = ", ".join(f"{d['type']} {d['confidence']:.2f}" for d in a["defects"])
                 lines += [f"### 사진 {e.get('attachmentId', '(예시 사진)')}", "", f"검출: {found}", "",
                           f"![{Path(a['image']).name}]({Path(a['image']).as_uri()})", ""]
+                if a.get("dentImage"):
+                    lines += [f"![{Path(a['dentImage']).name}]({Path(a['dentImage']).as_uri()})", ""]
             else:
                 lines += [f"- {e['type']}: {e.get('citation', '')} {e.get('excerpt', '')}"]
         lines += ["", "## 추천 부품", "", ", ".join(f"{x['partId']} ×{x['quantity']}" for x in p["recommendedParts"]) or "없음 (TODO)"]

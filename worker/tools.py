@@ -41,9 +41,17 @@ def load_photos(command: dict) -> list[dict]:
 
 
 async def call_mech_mcp(path: str) -> dict:
-    """mechanical-mcp: 금속 표면 결함 (scratches, patches 등)."""
+    """mechanical-mcp: 표면 결함(scratches, patches 등) + 찌그러짐(dent, breakage)을 둘 다 보고 합친다."""
     async with Client(C.MECH_MCP_URL) as c:
-        return (await c.call_tool("detect_surface_defects", {"photo_id": path})).data
+        surface = (await c.call_tool("detect_surface_defects", {"photo_id": path})).data
+        dent = (await c.call_tool("detect_dents", {"photo_id": path})).data
+    return {
+        "is_defective": surface["is_defective"] or dent["is_defective"],
+        "defects": surface["defects"] + dent["defects"],
+        "defect_counts": {**surface["defect_counts"], **dent["defect_counts"]},
+        "annotated_image": surface["annotated_image"],
+        "dent_image": dent["annotated_image"],
+    }
 
 
 async def call_pcb_mcp(path: str) -> dict:
@@ -120,4 +128,6 @@ async def write_report(text: str, findings: list[dict]) -> Report:
         return Report(summary=f"{top['type']} 결함 추정", repairMethod="해당 부품 점검 후 교체",
                       candidates=[Candidate(cause=top["type"], confidence=top["confidence"], explanation="MCP 검출 결과")])
     return await gpt(Report).ainvoke(
-        f"로봇청소기 수리 기사에게 줄 진단 리포트를 한국어로 써라. 후보는 확신도 높은 순.\n증상: {text}\nMCP 결과: {findings}")
+        "로봇청소기 수리 기사에게 줄 진단 리포트를 한국어로 써라. 후보는 확신도 높은 순.\n"
+        "MCP 결과는 전부 이 로봇청소기 부품 사진을 검사한 결과다. 무시하지 말고 근거로 써라.\n"
+        f"증상: {text}\nMCP 결과: {findings}")

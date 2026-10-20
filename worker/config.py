@@ -3,11 +3,13 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 HERE = Path(__file__).parent
 ROOT = HERE.parent  # 레포 맨 위
-load_dotenv(ROOT / ".env", override=True)  # .env의 키를 읽는다. override: 셸에 남은 옛 키보다 .env 우선
+for k, v in dotenv_values(ROOT / ".env").items():
+    if v:  # .env에 값이 있으면 셸에 남은 옛 키보다 우선. 빈 칸은 무시
+        os.environ[k] = v
 
 # Kafka: contract/INTEGRATION.md 계약 그대로 (backend 레포에서 복사)
 KAFKA = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")

@@ -127,6 +127,8 @@ async def report(state: State, config) -> dict:
     for f in state["findings"]:
         if f["found"]:
             e = {"type": "PHOTO", "annotation": {"defects": f["output"]["defects"], "image": f["output"]["annotated_image"]}}
+            if f["output"].get("dent_image"):  # 기계 사진은 찌그러짐 박스 사진이 하나 더 있다
+                e["annotation"]["dentImage"] = f["output"]["dent_image"]
             if f["attachmentId"]:  # 예시 사진은 Spring 첨부가 아니라 번호가 없다
                 e["attachmentId"] = f["attachmentId"]
             evidence.append(e)

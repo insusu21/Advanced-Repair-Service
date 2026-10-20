@@ -73,7 +73,10 @@ Kafka diagnosis.events.v2    (우리 → Spring)  +  worker/reports/*.md
 | MCP | 상태 |
 |---|---|
 | pcb (`mcp_servers/pcb`) | 실제. 팀원 pcb_agent 서버 그대로 |
-| mechanical (`mcp_servers/mechanical`) | 실제. 강판 결함 모델이라 일반 사진은 정확도 낮음 |
+| mechanical (`mcp_servers/mechanical`) | 실제. 도구 2개: `detect_surface_defects`(강판 결함 모델, 일반 사진은 정확도 낮음) + `detect_dents`(찌그러짐·파손) |
+
+`detect_dents`는 자동차 외판 모델(`vineetsarpal/yolov11n-car-damage`)을 쓴다. 원래 결함 이름이 `front-bumper-dent` 같은 자동차 부위라
+GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakage`로 바꿔 내보낸다. 로봇청소기용 모델이 생기면 `DENT_REPO`, `DENT_FILE`만 바꾼다.
 | rag | 가짜. `worker/tools.py`의 `call_rag_mcp` 채우기 |
 
 ## Spring과 붙일 때
