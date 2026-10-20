@@ -29,7 +29,7 @@ export const partApi = {
     if (USE_MOCK) return mockDelay(() => mock.createOrder(repairId, req), 500)
     return (await http.post<PurchaseOrder>(`/repairs/${repairId}/orders`, req)).data
   },
-  /** POST /api/orders/{id}/decision — 부품 담당자 승인·반려 */
+  /** POST /api/orders/{id}/decision — 본사 품질 담당자 승인·반려 */
   async decide(orderId: string, req: OrderDecisionRequest): Promise<PurchaseOrder> {
     if (USE_MOCK) return mockDelay(() => mock.decideOrder(orderId, req), 500)
     return (await http.post<PurchaseOrder>(`/orders/${orderId}/decision`, req)).data

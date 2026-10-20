@@ -85,7 +85,7 @@ async function onAction(key: string, comment: string) {
         break
       case 'reject':
         await store.decide({ target: 'DIAGNOSIS', action: 'REJECT', comment })
-        toast.warning('AI 진단을 반려했습니다. 직접 점검 후 수리 결과를 입력해 주세요.')
+        toast.warning('AI 진단을 반려했습니다. 직접 점검 후 수리 리포트를 작성해 주세요.')
         break
     }
   } catch (e) {
@@ -139,7 +139,7 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
           <CircleCheck :size="24" />
           <div class="grow"><strong>다음 단계</strong> 필요 부품의 재고를 확인하고, 수리를 마친 뒤 실제 결과를 입력해 주세요.</div>
           <RouterLink :to="`/repairs/${repair.id}/parts`" class="btn btn-lg"><Package :size="20" /> 부품 확인 · 발주</RouterLink>
-          <RouterLink :to="`/repairs/${repair.id}/review`" class="btn btn-primary btn-lg">수리 결과 입력 <ArrowRight :size="20" /></RouterLink>
+          <RouterLink :to="`/repairs/${repair.id}/review`" class="btn btn-primary btn-lg">수리 리포트 작성 <ArrowRight :size="20" /></RouterLink>
         </div>
         <div v-else-if="canDecide" class="sticky-cta">
           <span><Sparkles :size="18" /> 이 진단은 아직 <b>AI 초안</b>입니다. 내용을 확인한 뒤 처리해 주세요.</span>

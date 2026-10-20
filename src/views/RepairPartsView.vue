@@ -38,7 +38,7 @@ const compatible = computed(() => orders.parts.filter((p) => detail.repair && p.
 async function request(o: PurchaseOrder, payload: { quantity: number; fromWarehouse: string; comment: string }) {
   try {
     await orders.request(id.value, { draftOrderId: o.id, partId: o.partId, ...payload })
-    toast.success(`${o.partName} 발주 요청을 등록했습니다. 부품 담당자 승인을 기다립니다.`)
+    toast.success(`${o.partName} 발주 요청을 등록했습니다. 본사 품질 담당자 승인을 기다립니다.`)
   } catch (e) {
     toast.error(toErrorMessage(e))
   }
@@ -95,12 +95,12 @@ async function requestAny(o: PurchaseOrder, payload: { quantity: number; fromWar
           <h1>필요 부품 · 발주 요청</h1>
           <p class="sub">수리 ID {{ repairId(detail.repair.id) }} · {{ detail.repair.product.modelName }} · 시리얼 {{ detail.repair.product.serialNumber }}</p>
         </div>
-        <RouterLink v-if="auth.role === 'TECHNICIAN' && detail.repair.status === 'TECHNICIAN_REVIEW'" :to="`/repairs/${id}/review`" class="btn btn-primary btn-lg">수리 결과 입력 <ArrowRight :size="20" /></RouterLink>
+        <RouterLink v-if="auth.role === 'TECHNICIAN' && detail.repair.status === 'TECHNICIAN_REVIEW'" :to="`/repairs/${id}/review`" class="btn btn-primary btn-lg">수리 리포트 작성 <ArrowRight :size="20" /></RouterLink>
       </div>
 
       <div class="callout tone-info">
         <Info :size="22" />
-        <div><strong>AI 는 발주안을 제안만 합니다.</strong> 기사님이 수량·창고를 확인하고 “발주 요청 등록”을 눌러야 요청되며, 부품 담당자가 승인해야 출고됩니다.</div>
+        <div><strong>AI 는 발주안을 제안만 합니다.</strong> 기사님이 수량·창고를 확인하고 “발주 요청 등록”을 눌러야 요청되며, 본사 품질 담당자가 승인해야 출고됩니다.</div>
       </div>
 
       <section v-if="!confirmed && detail.diagnosis?.technicianDecision.state !== 'REJECTED'" class="card">

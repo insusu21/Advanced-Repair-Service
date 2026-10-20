@@ -2,7 +2,7 @@
 /* =========================================================================
  * 발주 카드
  *  - 기사(TECHNICIAN): AI 발주안(AI_DRAFT)을 검토·수량 조정 후 "발주 요청 등록" (사람 확인)
- *  - 부품 담당자(PARTS): 요청(REQUESTED)을 승인·반려
+ *  - 본사 품질 담당자(QUALITY_MANAGER): 요청(REQUESTED)을 승인·반려
  * AI 는 제안만 하며, 어떤 경우에도 자동으로 발주되지 않는다.
  * ========================================================================= */
 import { computed, ref, watch } from 'vue'
@@ -33,7 +33,7 @@ const stockAt = computed(() => props.part?.stocks.find((s) => s.warehouse === wh
 const shortage = computed(() => qty.value > stockAt.value)
 const meta = computed(() => ORDER_STATUS_META[props.order.status])
 const canRequest = computed(() => props.role === 'TECHNICIAN' && (props.order.status === 'AI_DRAFT' || props.order.status === 'REJECTED'))
-const canDecide = computed(() => props.role === 'PARTS' && props.order.status === 'REQUESTED')
+const canDecide = computed(() => props.role === 'QUALITY_MANAGER' && props.order.status === 'REQUESTED')
 
 function submitRequest() {
   if (!confirmChecked.value) {
@@ -94,7 +94,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
           </p>
           <div class="field">
             <label :for="`cm-${order.id}`">요청 메모</label>
-            <textarea :id="`cm-${order.id}`" v-model="comment" class="textarea" style="min-height: 80px" placeholder="부품 담당자에게 전달할 내용 (선택)" />
+            <textarea :id="`cm-${order.id}`" v-model="comment" class="textarea" style="min-height: 80px" placeholder="본사 품질 담당자에게 전달할 내용 (선택)" />
           </div>
           <label class="check">
             <input v-model="confirmChecked" type="checkbox" />
@@ -124,7 +124,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
           </dl>
 
           <div v-if="order.decision.state !== 'PENDING'" class="decided" :class="order.decision.state === 'APPROVED' ? 'human-zone' : 'neg'">
-            <AiBadge v-if="order.decision.state === 'APPROVED'" kind="human" label="부품 담당자 승인" />
+            <AiBadge v-if="order.decision.state === 'APPROVED'" kind="human" label="본사 품질 담당자 승인" />
             <dl class="kv">
               <dt>승인자</dt>
               <dd>{{ order.decision.decidedBy }} · {{ order.decision.decidedByRole ? ROLE_LABEL[order.decision.decidedByRole] : '' }}</dd>
@@ -149,7 +149,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
               <button type="button" class="btn btn-danger btn-lg" :disabled="busy" @click="decide('REJECT')"><CircleX :size="20" /> 반려</button>
             </div>
           </template>
-          <p v-else-if="order.status === 'REQUESTED'" class="callout tone-warning"><CircleAlert :size="18" /> 부품 담당자 승인을 기다리고 있습니다.</p>
+          <p v-else-if="order.status === 'REQUESTED'" class="callout tone-warning"><CircleAlert :size="18" /> 본사 품질 담당자 승인을 기다리고 있습니다.</p>
         </template>
       </div>
     </div>

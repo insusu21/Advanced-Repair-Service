@@ -2,13 +2,16 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { authApi } from '@/api'
 import { readToken, TOKEN_KEY } from '@/api/http'
+import { ROLE_LABEL } from '@/constants/status'
 import type { Role, User } from '@/types'
 
 const USER_KEY = 'robotcare-user'
 
 function readUser(): User | null {
   try {
-    return JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') as User | null
+    const u = JSON.parse(localStorage.getItem(USER_KEY) ?? 'null') as User | null
+    // 없어진 역할(QUALITY·PARTS)로 저장된 예전 로그인 정보는 무시
+    return u && u.role in ROLE_LABEL ? u : null
   } catch {
     return null
   }

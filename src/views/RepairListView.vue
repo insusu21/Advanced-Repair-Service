@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, PlusCircle, X, Camera, UserCheck, Building2, CircleCheck, RefreshCw } from 'lucide-vue-next'
+import { Search, PlusCircle, X, Camera, UserCheck, FileCheck2, CircleCheck, RefreshCw } from 'lucide-vue-next'
 import StatCard from '@/components/common/StatCard.vue'
 import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
@@ -94,9 +94,9 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.gr
 
     <div class="grid-4">
       <StatCard label="추가 사진 필요" :value="store.counts.needPhoto" :icon="Camera" tone="warning" :active="store.query.status === 'ADDITIONAL_INFO_NEEDED'" @select="setStatus('ADDITIONAL_INFO_NEEDED')" />
-      <StatCard label="기사 검토 대기" :value="store.counts.technicianReview" :icon="UserCheck" tone="ai" :active="store.query.status === 'DIAGNOSIS_COMPLETED'" @select="setStatus('DIAGNOSIS_COMPLETED')" />
-      <StatCard label="본사 승인 대기" :value="store.counts.hqApproval" :icon="Building2" tone="warning" :active="store.query.status === 'HQ_APPROVAL'" @select="setStatus('HQ_APPROVAL')" />
-      <StatCard label="수리 완료" :value="store.counts.completed" :icon="CircleCheck" tone="success" :active="store.query.status === 'APPROVED'" @select="setStatus('APPROVED')" />
+      <StatCard label="진단 확인 대기" :value="store.counts.technicianReview" :icon="UserCheck" tone="ai" :active="store.query.status === 'DIAGNOSIS_COMPLETED'" @select="setStatus('DIAGNOSIS_COMPLETED')" />
+      <StatCard label="리포트 확정 대기" :value="store.counts.reportPending" :icon="FileCheck2" tone="warning" :active="store.query.status === 'TECHNICIAN_REVIEW'" @select="setStatus('TECHNICIAN_REVIEW')" />
+      <StatCard label="수리 완료" :value="store.counts.completed" :icon="CircleCheck" tone="success" :active="store.query.status === 'CLOSED'" @select="setStatus('CLOSED')" />
     </div>
 
     <section class="card">

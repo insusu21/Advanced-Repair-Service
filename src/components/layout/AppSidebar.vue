@@ -4,25 +4,28 @@ import { useRoute } from 'vue-router'
 import { BarChart3, ClipboardCheck, House, List, Package, PlusCircle } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { useRepairListStore } from '@/stores/repairs'
+import { useOrderStore } from '@/stores/orders'
 import type { Role } from '@/types'
 
 defineEmits<{ navigate: [] }>()
 const auth = useAuthStore()
 const route = useRoute()
 const list = useRepairListStore()
+const orders = useOrderStore()
 
 onMounted(() => {
-  if (auth.hasRole('TECHNICIAN', 'QUALITY') && !list.loadedAt) void list.fetch()
+  if (auth.role === 'TECHNICIAN' && !list.loadedAt) void list.fetch()
+  if (auth.role === 'QUALITY_MANAGER' && !orders.orders.length && !orders.loading) void orders.fetchAll()
 })
 
 const items = computed(() => {
   const all: { key: string; label: string; to: string; icon: unknown; roles: Role[]; count?: number }[] = [
-    { key: 'home', label: '홈', to: '/', icon: House, roles: ['TECHNICIAN', 'QUALITY', 'PARTS'] },
+    { key: 'home', label: '홈', to: '/', icon: House, roles: ['TECHNICIAN', 'QUALITY_MANAGER'] },
     { key: 'repair-new', label: '수리 접수', to: '/repairs/new', icon: PlusCircle, roles: ['TECHNICIAN'] },
-    { key: 'repairs', label: '수리 목록', to: '/repairs', icon: List, roles: ['TECHNICIAN', 'QUALITY'], count: auth.role === 'TECHNICIAN' ? list.counts.needPhoto + list.counts.technicianReview : undefined },
-    { key: 'approvals', label: '승인 대기', to: '/approvals', icon: ClipboardCheck, roles: ['QUALITY'], count: list.counts.hqApproval + list.counts.manualReview },
-    { key: 'parts', label: '부품 및 발주', to: '/parts', icon: Package, roles: ['TECHNICIAN', 'PARTS'] },
-    { key: 'dashboard', label: '품질 대시보드', to: '/dashboard', icon: BarChart3, roles: ['QUALITY'] },
+    { key: 'repairs', label: '수리 목록', to: '/repairs', icon: List, roles: ['TECHNICIAN', 'QUALITY_MANAGER'], count: auth.role === 'TECHNICIAN' ? list.counts.needPhoto + list.counts.technicianReview + list.counts.reportPending : undefined },
+    { key: 'order-approvals', label: '발주 승인 대기', to: '/order-approvals', icon: ClipboardCheck, roles: ['QUALITY_MANAGER'], count: orders.pendingApproval.length },
+    { key: 'parts', label: '부품 및 발주', to: '/parts', icon: Package, roles: ['TECHNICIAN', 'QUALITY_MANAGER'] },
+    { key: 'dashboard', label: '품질 대시보드', to: '/dashboard', icon: BarChart3, roles: ['QUALITY_MANAGER'] },
   ]
   return all.filter((i) => auth.hasRole(...i.roles))
 })
@@ -53,7 +56,7 @@ const items = computed(() => {
       </RouterLink>
     </nav>
     <div class="foot">
-      <p>AI 결과는 초안입니다.<br />관리자가 승인한 내용만 확정됩니다.</p>
+      <p>AI 결과는 초안입니다.<br />기사가 확정한 리포트만 반영됩니다.</p>
     </div>
   </aside>
 </template>

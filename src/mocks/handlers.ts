@@ -1,6 +1,7 @@
 /* =========================================================================
  * Mock REST 핸들러 — 실제 백엔드 엔드포인트와 1:1 대응
  * 전역 규칙을 서버 측에서도 강제: AI 산출물은 사람 결정 없이 상태가 확정되지 않는다.
+ * 고장 DB·대시보드에는 기사가 확정한 리포트만 반영된다 (확정 = CLOSED).
  * ========================================================================= */
 import type {
   ApprovalRecord,
@@ -13,6 +14,7 @@ import type {
   Repair,
   RepairImage,
   RepairQuery,
+  RepairReport,
   RepairStatusCounts,
   RepairSummaryCounts,
   Role,
@@ -25,12 +27,13 @@ import type {
   LoginRequest,
   LoginResponse,
   OrderDecisionRequest,
+  ConfirmReportRequest,
   ReanalysisRequest,
-  TechnicianReviewRequest,
+  SaveReportDraftRequest,
   UploadImageRequest,
 } from '@/types/api'
 import { ApiError } from '@/api/http'
-import { STATUS_GROUPS } from '@/constants/status'
+import { FAULT_AREA_LABEL, STATUS_GROUPS } from '@/constants/status'
 import { productFromSerial, stagesFor, USERS, type DefectRecord } from './data'
 import { approvedRecords, baseDefectRecords, db, nextId, persist } from './db'
 import { restartAnalysis, runAnalysis } from './engine'
@@ -87,7 +90,7 @@ export function getProduct(serial: string) {
 const URGENCY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSummaryCounts; statusCounts: RepairStatusCounts } {
   const u = me()
-  // 기사는 본인 지점 건만, 본사·부품 담당자는 전체
+  // 기사는 본인 지점 건만, 본사 품질 담당자는 전체
   let items = db.repairs.filter((r) => (u.role === 'TECHNICIAN' ? r.branch === u.branch : true))
   const scope = items
   if (q.model) items = items.filter((r) => r.product.model === q.model)
@@ -121,8 +124,8 @@ export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSumm
     statusCounts,
     counts: {
       needPhoto: c(['ADDITIONAL_INFO_NEEDED']),
-      technicianReview: c(['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW']),
-      hqApproval: c(['HQ_APPROVAL']),
+      technicianReview: c(['DIAGNOSIS_COMPLETED']),
+      reportPending: c(['TECHNICIAN_REVIEW']),
       completed: c(['APPROVED', 'CLOSED']),
       analyzing: c(['RECEIVED', 'QUEUED', 'ANALYZING']),
       manualReview: c(['MANUAL_REVIEW']),
@@ -229,7 +232,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
     if (req.action === 'REQUEST_HQ_REVIEW' && (r.analysisError || r.status === 'ADDITIONAL_INFO_NEEDED')) {
       r.status = 'MANUAL_REVIEW'
       log(r, { target: 'DIAGNOSIS', action: 'HQ_REVIEW_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment || 'AI 분석 실패로 본사 수동 검토 요청' })
-      db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 분석 실패 건 수동 검토 요청`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+      db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 분석 실패 건 수동 검토 요청`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY_MANAGER'] })
       persist()
       return r
     }
@@ -252,7 +255,7 @@ export function approval(id: number, req: ApprovalRequest): Repair {
         d.technicianDecision = decision('CHANGE_REQUESTED')
         r.status = 'MANUAL_REVIEW'
         log(r, { target: 'DIAGNOSIS', action: 'HQ_REVIEW_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment })
-        db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 기사가 본사 검토를 요청했습니다.`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+        db.notifications.unshift({ id: uid('n'), title: '본사 검토 요청', body: `수리 #${r.id} 기사가 본사 검토를 요청했습니다.`, at: now, read: false, link: `/approvals/${r.id}`, roles: ['QUALITY_MANAGER'] })
         break
       case 'COMMENT':
         log(r, { target: 'DIAGNOSIS', action: 'COMMENTED', actor: u.name, actorRole: u.role, comment: req.comment })
@@ -260,51 +263,8 @@ export function approval(id: number, req: ApprovalRequest): Repair {
       default:
         throw new ApiError(400, '지원하지 않는 처리입니다.')
     }
-  } else if (req.target === 'TECH_REVIEW') {
-    requireRole('QUALITY')
-    const tr = r.technicianReview
-    if (!tr || r.status !== 'HQ_APPROVAL') throw new ApiError(409, '본사 승인 대기 상태가 아닙니다.')
-    switch (req.action) {
-      case 'APPROVE': {
-        tr.hqDecision = decision('APPROVED')
-        r.status = 'APPROVED'
-        log(r, { target: 'TECH_REVIEW', action: 'APPROVED', actor: u.name, actorRole: u.role, comment: req.comment || '고장 DB·품질 대시보드 반영 승인' })
-        // ★ 승인된 결과만 사내 고장 DB 에 반영
-        const d = latestDiagnosis(id)
-        const month = now.slice(0, 7)
-        const rec: DefectRecord = {
-          repairId: r.id,
-          receiptNo: r.receiptNo,
-          model: r.product.model,
-          part: tr.replacedParts[0]?.partName ?? '기타',
-          cause: tr.actualCause,
-          branch: r.branch,
-          factory: r.product.factory,
-          month,
-          aiMatched: tr.aiMatch === 'MATCH' || (tr.aiMatch === 'PARTIAL' && !!d),
-          approvedAt: now,
-        }
-        approvedRecords.push(rec)
-        break
-      }
-      case 'REJECT':
-        if (!req.comment) throw new ApiError(422, '반려 사유를 입력해 주세요.')
-        tr.hqDecision = decision('REJECTED')
-        r.status = 'REJECTED'
-        log(r, { target: 'TECH_REVIEW', action: 'REJECTED', actor: u.name, actorRole: u.role, comment: req.comment })
-        break
-      case 'REQUEST_CHANGE':
-        if (!req.comment) throw new ApiError(422, '수정 요청 내용을 입력해 주세요.')
-        tr.hqDecision = decision('CHANGE_REQUESTED')
-        r.status = 'TECHNICIAN_REVIEW'
-        log(r, { target: 'TECH_REVIEW', action: 'CHANGE_REQUESTED', actor: u.name, actorRole: u.role, comment: req.comment })
-        db.notifications.unshift({ id: uid('n'), title: '본사 수정 요청', body: `수리 #${r.id}: ${req.comment}`, at: now, read: false, link: `/repairs/${r.id}/review`, roles: ['TECHNICIAN'] })
-        break
-      default:
-        throw new ApiError(400, '지원하지 않는 처리입니다.')
-    }
   } else if (req.target === 'MANUAL_REVIEW') {
-    requireRole('QUALITY')
+    requireRole('QUALITY_MANAGER')
     if (r.status !== 'MANUAL_REVIEW') throw new ApiError(409, '수동 검토 상태가 아닙니다.')
     if (!req.comment) throw new ApiError(422, '검토 의견을 입력해 주세요.')
     r.status = 'TECHNICIAN_REVIEW'
@@ -329,27 +289,94 @@ export function reanalysis(id: number, req: ReanalysisRequest): Repair {
   return r
 }
 
-/* ---------------- 기사 수리 결과 ---------------- */
-export function technicianReview(id: number, req: TechnicianReviewRequest): Repair {
+/* ---------------- 수리 리포트 (초안 저장 → 확정) ---------------- */
+function checkReportVersion(r: Repair, version: number | null) {
+  if ((r.report?.version ?? null) !== version) {
+    throw new ApiError(409, '다른 곳에서 리포트가 먼저 수정되었습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.', 'REPORT_VERSION')
+  }
+}
+
+/** PUT /api/repairs/{id}/report — 초안 저장. 확정된 리포트를 수정하면 revision+1 의 새 초안이 된다 */
+export function saveReportDraft(id: number, req: SaveReportDraftRequest): Repair {
   const u = requireRole('TECHNICIAN')
   const r = repairOr404(id)
-  if (r.status !== 'TECHNICIAN_REVIEW') throw new ApiError(409, '수리 결과를 입력할 수 있는 상태가 아닙니다.')
-  if (!req.actualCause.trim()) throw new ApiError(422, '실제 고장 원인을 입력해 주세요.')
-  r.technicianReview = {
-    aiMatch: req.aiMatch,
-    actualCause: req.actualCause,
-    replacedParts: req.replacedParts,
-    repairMethod: req.repairMethod,
-    comment: req.comment,
-    beforeImages: req.beforeImages.map(toImage),
-    afterImages: req.afterImages.map(toImage),
-    submittedBy: u.name,
-    submittedAt: new Date().toISOString(),
-    hqDecision: { state: 'PENDING' },
+  if (r.status !== 'TECHNICIAN_REVIEW' && r.status !== 'CLOSED') throw new ApiError(409, '진단 확인 후에 리포트를 작성할 수 있습니다.')
+  checkReportVersion(r, req.version)
+  const now = new Date().toISOString()
+  const content = { ...req.content }
+  // 고장 없음이면 고장 부위는 비우고, AI 진단이 없던 건은 수용 여부를 NOT_AVAILABLE 로 고정
+  if (content.outcome === 'NO_FAULT_FOUND') content.faults = []
+  if (!latestDiagnosis(id)) content.aiAcceptance = 'NOT_AVAILABLE'
+
+  const prev = r.report
+  let report: RepairReport
+  if (!prev) {
+    report = { repairId: id, version: 1, revision: 1, status: 'DRAFT', content, createdBy: u.name, updatedBy: u.name, updatedAt: now, confirmations: [] }
+  } else {
+    const reopened = prev.status === 'CONFIRMED'
+    report = {
+      ...prev,
+      version: prev.version + 1,
+      revision: reopened ? prev.revision + 1 : prev.revision,
+      status: 'DRAFT',
+      content,
+      updatedBy: u.name,
+      updatedAt: now,
+      confirmedBy: undefined,
+      confirmedAt: undefined,
+    }
   }
-  r.status = 'HQ_APPROVAL'
-  log(r, { target: 'TECH_REVIEW', action: 'SUBMITTED', actor: u.name, actorRole: u.role, comment: '수리 결과 입력 및 본사 승인 요청' })
-  db.notifications.unshift({ id: uid('n'), title: '본사 승인 요청', body: `수리 #${r.id} 수리 결과 승인이 필요합니다.`, at: new Date().toISOString(), read: false, link: `/approvals/${r.id}`, roles: ['QUALITY'] })
+  r.report = report
+  log(r, { target: 'REPORT', action: 'DRAFT_SAVED', actor: u.name, actorRole: u.role, comment: `리포트 초안 r${report.revision} 저장` })
+  persist()
+  return r
+}
+
+/** POST /api/repairs/{id}/report/confirm — 확정. 고장 DB 레코드를 이 수리 건 기준으로 교체(upsert) 하고 CLOSED 로 */
+export function confirmReport(id: number, req: ConfirmReportRequest): Repair {
+  const u = requireRole('TECHNICIAN')
+  const r = repairOr404(id)
+  const rep = r.report
+  if (!rep) throw new ApiError(409, '저장된 리포트 초안이 없습니다.')
+  checkReportVersion(r, req.version)
+  if (rep.status === 'CONFIRMED') throw new ApiError(409, '이미 확정된 리포트입니다.')
+  const c = rep.content
+  if (!c.actualCause.trim()) throw new ApiError(422, '실제 원인을 입력해 주세요.')
+  if (!c.actualAction.trim()) throw new ApiError(422, '실제 조치 내용을 입력해 주세요.')
+  if (c.outcome !== 'NO_FAULT_FOUND' && !c.faults.length) throw new ApiError(422, '고장 부위를 1개 이상 입력해 주세요.')
+
+  const now = new Date().toISOString()
+  Object.assign(rep, { status: 'CONFIRMED', version: rep.version + 1, confirmedBy: u.name, confirmedAt: now, updatedBy: u.name, updatedAt: now })
+  rep.confirmations.push({ revision: rep.revision, confirmedBy: u.name, confirmedAt: now })
+  r.status = 'CLOSED'
+
+  // ★ 확정본만 고장 DB 에 반영. 같은 수리 건의 이전 확정본은 교체
+  const idx = approvedRecords.findIndex((x) => x.repairId === id)
+  if (idx >= 0) approvedRecords.splice(idx, 1)
+  if (c.outcome !== 'NO_FAULT_FOUND') {
+    const f = c.faults[0]
+    const part = f.partId ? db.parts.find((p) => p.id === f.partId) : undefined
+    const rec: DefectRecord = {
+      repairId: r.id,
+      receiptNo: r.receiptNo,
+      model: r.product.model,
+      part: part?.name ?? `${FAULT_AREA_LABEL[f.area]} (부품 교체 없음)`,
+      cause: c.actualCause,
+      branch: r.branch,
+      factory: r.product.factory,
+      month: now.slice(0, 7),
+      aiMatched: c.aiAcceptance === 'ACCEPTED' || c.aiAcceptance === 'PARTIAL',
+      approvedAt: now,
+    }
+    approvedRecords.push(rec)
+  }
+  log(r, {
+    target: 'REPORT',
+    action: 'CONFIRMED',
+    actor: u.name,
+    actorRole: u.role,
+    comment: `리포트 r${rep.revision} 확정 · ${c.outcome === 'NO_FAULT_FOUND' ? '고장 없음 (고장 DB 미반영)' : rep.revision > 1 ? '고장 DB 반영 내용 교체' : '고장 DB 반영'}`,
+  })
   persist()
   return r
 }
@@ -414,13 +441,13 @@ export function createOrder(id: number, req: CreateOrderRequest): PurchaseOrder 
   if (o.status !== 'AI_DRAFT' && o.status !== 'REJECTED') throw new ApiError(409, '이미 요청된 발주입니다.')
   Object.assign(o, { quantity: req.quantity, fromWarehouse: req.fromWarehouse, status: 'REQUESTED', requestedBy: u.name, requestedAt: new Date().toISOString(), requestComment: req.comment, decision: { state: 'PENDING' } })
   log(r, { target: 'ORDER', action: 'ORDER_REQUESTED', actor: u.name, actorRole: u.role, comment: `${o.partName}(${o.partNo}) ${o.quantity}개 · ${o.fromWarehouse}` })
-  db.notifications.unshift({ id: uid('n'), title: '발주 승인 요청', body: `${o.partName}(${o.partNo}) ${o.quantity}개 · 수리 #${r.id}`, at: new Date().toISOString(), read: false, link: '/parts', roles: ['PARTS'] })
+  db.notifications.unshift({ id: uid('n'), title: '발주 승인 요청', body: `${o.partName}(${o.partNo}) ${o.quantity}개 · 수리 #${r.id}`, at: new Date().toISOString(), read: false, link: '/order-approvals', roles: ['QUALITY_MANAGER'] })
   persist()
   return o
 }
 
 export function decideOrder(orderId: string, req: OrderDecisionRequest): PurchaseOrder {
-  const u = requireRole('PARTS')
+  const u = requireRole('QUALITY_MANAGER')
   const o = db.orders.find((x) => x.id === orderId)
   if (!o) throw new ApiError(404, '발주 요청을 찾을 수 없습니다.')
   if (o.status !== 'REQUESTED') throw new ApiError(409, '승인 대기 상태가 아닙니다.')
@@ -437,15 +464,6 @@ export function decideOrder(orderId: string, req: OrderDecisionRequest): Purchas
   return o
 }
 
-/* ---------------- 승인 대기 ---------------- */
-export function listApprovalQueue(): Repair[] {
-  requireRole('QUALITY')
-  return db.repairs
-    .filter((r) => r.status === 'HQ_APPROVAL' || r.status === 'MANUAL_REVIEW')
-    .map((r) => ({ ...r, aiTopCause: latestDiagnosis(r.id)?.topCause }))
-    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-}
-
 /* ---------------- 대시보드 ---------------- */
 function allRecords() {
   return [...baseDefectRecords, ...approvedRecords]
@@ -457,7 +475,7 @@ function countBy(list: DefectRecord[], key: keyof DefectRecord) {
 }
 
 export function dashboard(months = 6): DefectDashboard {
-  requireRole('QUALITY')
+  requireRole('QUALITY_MANAGER')
   const recs = allRecords()
   const monthKeys = [...new Set(recs.map((r) => r.month))].sort().slice(-months)
   const inRange = recs.filter((r) => monthKeys.includes(r.month))
@@ -497,7 +515,7 @@ export function dashboard(months = 6): DefectDashboard {
 }
 
 export function dashboardRecords(filter: { dim: 'part' | 'model' | 'branch' | 'factory' | 'month' | 'cause'; value: string }): DefectRecord[] {
-  requireRole('QUALITY')
+  requireRole('QUALITY_MANAGER')
   return allRecords()
     .filter((r) => r[filter.dim] === filter.value)
     .sort((a, b) => b.approvedAt.localeCompare(a.approvedAt))

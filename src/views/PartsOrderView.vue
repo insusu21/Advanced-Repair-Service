@@ -1,5 +1,6 @@
 <script setup lang="ts">
-/* 부품 및 발주 — 부품 담당자: 발주 승인·반려 / 기사: 내 발주 현황 + 재고 조회 */
+/* 부품 및 발주 — 본사 품질 담당자: 발주 승인·반려 / 기사: 내 발주 현황 + 재고 조회
+ * pendingOnly: '발주 승인 대기' 메뉴용 (승인 대기 목록만 표시) */
 import { computed, onMounted, ref } from 'vue'
 import { Search, ClipboardCheck, List, Warehouse, RefreshCw } from 'lucide-vue-next'
 import PurchaseApprovalCard from '@/components/parts/PurchaseApprovalCard.vue'
@@ -14,17 +15,18 @@ import { toErrorMessage } from '@/api'
 import { formatDateTime, repairId } from '@/utils/format'
 import type { OrderStatus, PurchaseOrder } from '@/types'
 
+const props = defineProps<{ pendingOnly?: boolean }>()
 const store = useOrderStore()
 const auth = useAuthStore()
 const toast = useToastStore()
-const isParts = computed(() => auth.role === 'PARTS')
-const tab = ref<'pending' | 'all' | 'stock'>(isParts.value ? 'pending' : 'all')
+const canApprove = computed(() => auth.role === 'QUALITY_MANAGER')
+const tab = ref<'pending' | 'all' | 'stock'>(props.pendingOnly || canApprove.value ? 'pending' : 'all')
 const q = ref('')
 const statusFilter = ref<OrderStatus | 'ALL'>('ALL')
 
 onMounted(() => store.fetchAll())
 
-const filteredOrders = computed(() => store.orders.filter((o) => statusFilter.value === 'ALL' || o.status === statusFilter.value).filter((o) => o.status !== 'AI_DRAFT' || !isParts.value))
+const filteredOrders = computed(() => store.orders.filter((o) => statusFilter.value === 'ALL' || o.status === statusFilter.value).filter((o) => o.status !== 'AI_DRAFT' || !canApprove.value))
 const parts = computed(() => {
   const k = q.value.trim().toLowerCase()
   return store.parts.filter((p) => !k || [p.name, p.partNo, p.factory, ...p.compatibleModels].some((v) => v.toLowerCase().includes(k)))
@@ -44,17 +46,17 @@ async function decide(o: PurchaseOrder, p: { action: 'APPROVE' | 'REJECT'; comme
   <div class="page">
     <div class="page-head">
       <div>
-        <h1>부품 및 발주</h1>
-        <p class="sub">{{ isParts ? '기사가 확인·요청한 발주를 검토하고 승인합니다.' : '발주 요청 현황과 부품 재고를 확인합니다.' }}</p>
+        <h1>{{ pendingOnly ? '발주 승인 대기' : '부품 및 발주' }}</h1>
+        <p class="sub">{{ canApprove ? '기사가 확인·요청한 발주를 검토하고 승인합니다.' : '발주 요청 현황과 부품 재고를 확인합니다.' }}</p>
       </div>
       <button class="btn" type="button" :disabled="store.loading" @click="store.fetchAll()"><RefreshCw :size="18" :class="{ spin: store.loading }" /> 새로고침</button>
     </div>
 
-    <div class="tabs" role="tablist">
-      <button v-if="isParts" type="button" role="tab" class="tab" :aria-selected="tab === 'pending'" @click="tab = 'pending'">
+    <div v-if="!pendingOnly" class="tabs" role="tablist">
+      <button v-if="canApprove" type="button" role="tab" class="tab" :aria-selected="tab === 'pending'" @click="tab = 'pending'">
         <ClipboardCheck :size="20" /> 승인 대기 <span class="badge tone-warning">{{ store.pendingApproval.length }}</span>
       </button>
-      <button type="button" role="tab" class="tab" :aria-selected="tab === 'all'" @click="tab = 'all'"><List :size="20" /> {{ isParts ? '전체 발주' : '발주 현황' }}</button>
+      <button type="button" role="tab" class="tab" :aria-selected="tab === 'all'" @click="tab = 'all'"><List :size="20" /> {{ canApprove ? '전체 발주' : '발주 현황' }}</button>
       <button type="button" role="tab" class="tab" :aria-selected="tab === 'stock'" @click="tab = 'stock'"><Warehouse :size="20" /> 재고 현황</button>
     </div>
 
@@ -100,7 +102,7 @@ async function decide(o: PurchaseOrder, p: { action: 'APPROVE' | 'REJECT'; comme
               <td><span class="badge" :class="`tone-${ORDER_STATUS_META[o.status].tone}`">{{ ORDER_STATUS_META[o.status].label }}</span></td>
               <td>
                 <template v-if="o.decision.decidedBy">{{ o.decision.decidedBy }}<div class="faint">{{ formatDateTime(o.decision.decidedAt) }}</div></template>
-                <button v-else-if="isParts && o.status === 'REQUESTED'" type="button" class="btn btn-sm btn-primary" @click="tab = 'pending'">검토하기</button>
+                <button v-else-if="canApprove && o.status === 'REQUESTED'" type="button" class="btn btn-sm btn-primary" @click="tab = 'pending'">검토하기</button>
                 <span v-else class="faint">-</span>
               </td>
             </tr>

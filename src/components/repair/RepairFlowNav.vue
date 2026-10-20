@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* 수리 건 상단의 업무 흐름 내비게이션: 접수 → AI 분석 → 진단 확인 → 부품·발주 → 수리 결과 → 본사 승인 */
+/* 수리 건 상단의 업무 흐름 내비게이션: 접수 → AI 분석 → 진단 확인 → 부품·발주 → 수리 리포트 → 리포트 확정 */
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Check } from 'lucide-vue-next'

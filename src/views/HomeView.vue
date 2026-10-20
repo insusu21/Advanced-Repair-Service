@@ -2,7 +2,7 @@
 /* 홈 = 마이페이지 겸 오늘의 업무 목록. 역할별로 "지금 처리해야 할 일" 을 먼저 보여준다. */
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Camera, UserCheck, Building2, CircleCheck, PlusCircle, Hand, Loader, Package, BarChart3, ArrowRight } from 'lucide-vue-next'
+import { Camera, UserCheck, FileCheck2, CircleCheck, ClipboardCheck, PlusCircle, Package, BarChart3, ArrowRight } from 'lucide-vue-next'
 import StatCard from '@/components/common/StatCard.vue'
 import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
@@ -22,11 +22,10 @@ const orders = useOrderStore()
 const router = useRouter()
 
 const isTech = computed(() => auth.role === 'TECHNICIAN')
-const isQuality = computed(() => auth.role === 'QUALITY')
-const isParts = computed(() => auth.role === 'PARTS')
+const isQuality = computed(() => auth.role === 'QUALITY_MANAGER')
 
 onMounted(() => {
-  if (!isParts.value) {
+  if (isTech.value) {
     list.resetQuery()
     void list.fetch()
     list.startLive()
@@ -36,14 +35,12 @@ onMounted(() => {
 })
 onBeforeUnmount(() => list.stopLive())
 
-const ACTION_STATUSES: RepairStatus[] = isTech.value
-  ? ['ADDITIONAL_INFO_NEEDED', 'DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'REJECTED']
-  : ['HQ_APPROVAL', 'MANUAL_REVIEW']
-const todo = computed(() => list.items.filter((r) => ACTION_STATUSES.includes(r.status) || (isTech.value && r.analysisError)))
+const ACTION_STATUSES: RepairStatus[] = ['ADDITIONAL_INFO_NEEDED', 'DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'REJECTED']
+const todo = computed(() => list.items.filter((r) => ACTION_STATUSES.includes(r.status) || r.analysisError))
 const recent = computed(() => list.items.slice(0, 6))
 
 function goList(status: RepairStatus) {
-  void router.push({ path: isQuality.value && (status === 'HQ_APPROVAL' || status === 'MANUAL_REVIEW') ? '/approvals' : '/repairs', query: { status } })
+  void router.push({ path: '/repairs', query: { status } })
 }
 const lowStock = computed(() => orders.parts.filter((p) => p.stocks.reduce((a, s) => a + s.quantity, 0) < 3))
 const greeting = computed(() => {
@@ -63,27 +60,19 @@ const greeting = computed(() => {
       <RouterLink v-if="isQuality" to="/dashboard" class="btn btn-lg"><BarChart3 :size="22" /> 품질 대시보드</RouterLink>
     </div>
 
-    <!-- ===== 기사 / 품질 ===== -->
-    <template v-if="!isParts">
+    <!-- ===== 서비스센터 기사 ===== -->
+    <template v-if="isTech">
       <div class="grid-4">
-        <template v-if="isTech">
-          <StatCard label="추가 사진 필요" :value="list.counts.needPhoto" :icon="Camera" tone="warning" hint="AI 가 사진을 더 요청한 건" @select="goList('ADDITIONAL_INFO_NEEDED')" />
-          <StatCard label="기사 검토 대기" :value="list.counts.technicianReview" :icon="UserCheck" tone="ai" hint="진단 초안 확인 · 수리 결과 입력" @select="goList('DIAGNOSIS_COMPLETED')" />
-          <StatCard label="본사 승인 대기" :value="list.counts.hqApproval" :icon="Building2" tone="warning" @select="goList('HQ_APPROVAL')" />
-          <StatCard label="수리 완료" :value="list.counts.completed" :icon="CircleCheck" tone="success" hint="본사 승인 완료" @select="goList('APPROVED')" />
-        </template>
-        <template v-else>
-          <StatCard label="본사 승인 대기" :value="list.counts.hqApproval" :icon="Building2" tone="warning" hint="기사 수리 결과 검토" @select="goList('HQ_APPROVAL')" />
-          <StatCard label="수동 검토 요청" :value="list.counts.manualReview" :icon="Hand" tone="danger" hint="AI 판독 불가 · 기사 요청" @select="goList('MANUAL_REVIEW')" />
-          <StatCard label="AI 분석 중" :value="list.counts.analyzing" :icon="Loader" tone="ai" @select="goList('ANALYZING')" />
-          <StatCard label="승인 완료" :value="list.counts.completed" :icon="CircleCheck" tone="success" hint="고장 DB 반영됨" @select="goList('APPROVED')" />
-        </template>
+        <StatCard label="추가 사진 필요" :value="list.counts.needPhoto" :icon="Camera" tone="warning" hint="AI 가 사진을 더 요청한 건" @select="goList('ADDITIONAL_INFO_NEEDED')" />
+        <StatCard label="진단 확인 대기" :value="list.counts.technicianReview" :icon="UserCheck" tone="ai" hint="AI 진단 초안 확인" @select="goList('DIAGNOSIS_COMPLETED')" />
+        <StatCard label="리포트 확정 대기" :value="list.counts.reportPending" :icon="FileCheck2" tone="warning" hint="수리 후 리포트 작성·확정" @select="goList('TECHNICIAN_REVIEW')" />
+        <StatCard label="수리 완료" :value="list.counts.completed" :icon="CircleCheck" tone="success" hint="리포트 확정 · 고장 DB 반영" @select="goList('CLOSED')" />
       </div>
 
       <section class="card">
         <div class="card-head">
           <h2>지금 처리할 일 <span class="badge tone-warning">{{ todo.length }}건</span></h2>
-          <RouterLink :to="isQuality ? '/approvals' : '/repairs'" class="btn btn-sm">전체 보기 <ArrowRight :size="16" /></RouterLink>
+          <RouterLink to="/repairs" class="btn btn-sm">전체 보기 <ArrowRight :size="16" /></RouterLink>
         </div>
         <div v-if="list.loading && !list.items.length" class="card-body"><SkeletonBlock :lines="4" :height="44" /></div>
         <StateView v-else-if="list.error" state="error" :message="list.error" compact @retry="list.fetch()" />
@@ -111,27 +100,34 @@ const greeting = computed(() => {
         <StateView v-else-if="!recent.length && !list.error" state="empty" title="접수된 수리 건이 없습니다" compact>
           <RouterLink v-if="isTech" to="/repairs/new" class="btn btn-primary"><PlusCircle :size="18" /> 첫 수리 접수하기</RouterLink>
         </StateView>
-        <RepairTable v-else :items="recent" :role="auth.role" :show-tech="isQuality" />
+        <RepairTable v-else :items="recent" :role="auth.role" :show-tech="false" />
       </section>
     </template>
 
-    <!-- ===== 부품 담당자 ===== -->
-    <template v-else>
+    <!-- ===== 본사 품질 담당자: 발주 승인 · 고장 통계 ===== -->
+    <template v-else-if="isQuality">
       <div class="grid-3">
-        <StatCard label="발주 승인 대기" :value="orders.pendingApproval.length" :icon="Package" tone="warning" @select="router.push('/parts')" />
+        <StatCard label="발주 승인 대기" :value="orders.pendingApproval.length" :icon="ClipboardCheck" tone="warning" hint="기사가 요청한 발주" @select="router.push('/order-approvals')" />
         <StatCard label="재고 부족 부품" :value="lowStock.length" :icon="Package" tone="danger" hint="전체 창고 합계 3개 미만" @select="router.push('/parts')" />
-        <StatCard label="이번 달 승인" :value="orders.orders.filter((o) => o.status === 'APPROVED').length" :icon="CircleCheck" tone="success" @select="router.push('/parts')" />
+        <RouterLink to="/dashboard" class="card dash-link">
+          <span class="dash-ic"><BarChart3 :size="24" aria-hidden="true" /></span>
+          <span class="t-main">
+            <strong>품질 대시보드</strong>
+            <span class="faint">승인된 고장 데이터를 부품·모델·지점·공장별로 확인</span>
+          </span>
+          <ArrowRight :size="20" aria-hidden="true" />
+        </RouterLink>
       </div>
       <section class="card">
         <div class="card-head">
           <h2>승인이 필요한 발주 요청</h2>
-          <RouterLink to="/parts" class="btn btn-sm">부품 및 발주로 이동 <ArrowRight :size="16" /></RouterLink>
+          <RouterLink to="/order-approvals" class="btn btn-sm">발주 승인 대기로 이동 <ArrowRight :size="16" /></RouterLink>
         </div>
         <div v-if="orders.loading" class="card-body"><SkeletonBlock :lines="3" :height="44" /></div>
         <StateView v-else-if="!orders.pendingApproval.length" state="empty" title="승인 대기 중인 발주가 없습니다" compact />
         <ul v-else class="todo">
           <li v-for="o in orders.pendingApproval" :key="o.id">
-            <RouterLink to="/parts" class="todo-item">
+            <RouterLink to="/order-approvals" class="todo-item">
               <span class="badge tone-warning">승인 대기</span>
               <span class="t-main">
                 <strong>{{ o.partName }} ({{ o.partNo }}) · {{ o.quantity }}개</strong>
@@ -148,6 +144,27 @@ const greeting = computed(() => {
 </template>
 
 <style scoped>
+.dash-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  text-decoration: none;
+  color: var(--text);
+}
+.dash-link:hover {
+  background: var(--navy-50);
+}
+.dash-ic {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: var(--navy-50);
+  color: var(--navy-800);
+  flex: none;
+}
 .todo {
   list-style: none;
   margin: 0;

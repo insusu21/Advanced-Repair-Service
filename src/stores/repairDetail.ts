@@ -8,7 +8,7 @@ import { computed, ref } from 'vue'
 import { repairApi, toErrorMessage } from '@/api'
 import { connectRepairEvents, type SseConnection, type SseState } from '@/services/sse'
 import type { Diagnosis, PhotoRequest, Repair, RepairEvent } from '@/types'
-import type { ApprovalRequest, ReanalysisRequest, TechnicianReviewRequest, UploadImageRequest } from '@/types/api'
+import type { ApprovalRequest, ReanalysisRequest, SaveReportDraftRequest, UploadImageRequest } from '@/types/api'
 
 export const useRepairDetailStore = defineStore('repairDetail', () => {
   const repair = ref<Repair | null>(null)
@@ -122,9 +122,25 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
       photoRequests.value = await repairApi.photoRequests(repair.value.id)
     })
 
-  const submitReview = (req: TechnicianReviewRequest) =>
+  /** 수리 전·후 사진 업로드 (기존 이미지 API, kind BEFORE/AFTER). 올라간 사진은 repair.images 에 붙는다 */
+  const uploadReportPhotos = (photos: UploadImageRequest[]) =>
     run(async () => {
-      repair.value = await repairApi.technicianReview(repair.value!.id, req)
+      const id = repair.value!.id
+      const imgs = []
+      for (const p of photos) imgs.push(await repairApi.uploadImage(id, p))
+      repair.value = { ...repair.value!, images: [...repair.value!.images, ...imgs] }
+    })
+
+  /** 리포트 초안 저장 */
+  const saveReportDraft = (req: SaveReportDraftRequest) =>
+    run(async () => {
+      repair.value = await repairApi.saveReportDraft(repair.value!.id, req)
+    })
+
+  /** 리포트 확정 (저장된 초안의 version 기준) */
+  const confirmReport = (version: number) =>
+    run(async () => {
+      repair.value = await repairApi.confirmReport(repair.value!.id, { version })
     })
 
   return {
@@ -147,6 +163,8 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
     decide,
     requestReanalysis,
     addPhotos,
-    submitReview,
+    uploadReportPhotos,
+    saveReportDraft,
+    confirmReport,
   }
 })

@@ -4,7 +4,8 @@
  * 사람의 결정(Decision)이 기록되기 전까지는 확정 데이터로 취급하지 않는다.
  * ========================================================================= */
 
-export type Role = 'TECHNICIAN' | 'QUALITY' | 'PARTS'
+/** 백엔드 Role enum 과 동일 */
+export type Role = 'TECHNICIAN' | 'QUALITY_MANAGER'
 
 export interface User {
   employeeId: string
@@ -21,7 +22,6 @@ export type RepairStatus =
   | 'ADDITIONAL_INFO_NEEDED'
   | 'DIAGNOSIS_COMPLETED'
   | 'TECHNICIAN_REVIEW'
-  | 'HQ_APPROVAL'
   | 'APPROVED'
   | 'REJECTED'
   | 'MANUAL_REVIEW'
@@ -71,8 +71,8 @@ export interface Repair {
   analysisError?: string
   /** 진단/검토/발주/본사 결정의 전체 이력 */
   history: ApprovalRecord[]
-  /** 기사가 입력한 실제 수리 결과 (사람 입력 = 확정 후보) */
-  technicianReview?: TechnicianReview
+  /** 기사 수리 리포트 (초안 → 확정). 확정본만 고장 DB·대시보드에 반영 */
+  report?: RepairReport
   /** 목록 응답용 요약: 최신 AI 진단 원인 */
   aiTopCause?: string
   /** 데모 시나리오 제어용 (Mock 전용) */
@@ -228,21 +228,54 @@ export interface Diagnosis {
   technicianDecision: Decision
 }
 
-/* ---------------- 기사 확인 / 수리 결과 ---------------- */
+/* ---------------- 수리 리포트 (백엔드 ReportContent 와 동일 구조) ---------------- */
 
-export type AiMatch = 'MATCH' | 'PARTIAL' | 'MISMATCH'
+export type FaultArea = 'PCB' | 'MOTOR' | 'SW' | 'OTHER'
+export type RepairOutcome = 'FIXED' | 'NOT_FIXED' | 'NO_FAULT_FOUND'
+/** AI 진단 수용 여부. AI 진단이 없던 건은 NOT_AVAILABLE */
+export type AiAcceptance = 'ACCEPTED' | 'PARTIAL' | 'REJECTED' | 'NOT_AVAILABLE'
 
-export interface TechnicianReview {
-  aiMatch: AiMatch
+export interface ReportFault {
+  area: FaultArea
+  partId?: string
+}
+
+export interface ReportContent {
   actualCause: string
-  replacedParts: { partNo: string; partName: string; quantity: number }[]
-  repairMethod: string
-  comment: string
-  beforeImages: RepairImage[]
-  afterImages: RepairImage[]
-  submittedBy: string
-  submittedAt: string
-  hqDecision: Decision
+  actualAction: string
+  technicianOpinion: string
+  /** 고장 없음(NO_FAULT_FOUND)이면 빈 배열 */
+  faults: ReportFault[]
+  repairSuccessful: boolean
+  outcome: RepairOutcome
+  aiAcceptance: AiAcceptance
+}
+
+export type ReportStatus = 'DRAFT' | 'CONFIRMED'
+
+/** 확정 이력 한 줄 (revision 별 확정자·시각) */
+export interface ReportConfirmation {
+  revision: number
+  confirmedBy: string
+  confirmedAt: string
+}
+
+export interface RepairReport {
+  repairId: number
+  /** 낙관적 잠금 버전. 저장·확정마다 +1, 요청 version 과 다르면 409 REPORT_VERSION */
+  version: number
+  /** 내용 개정 번호. 확정 후 다시 수정하면 +1 된 새 초안이 된다 */
+  revision: number
+  status: ReportStatus
+  content: ReportContent
+  createdBy: string
+  updatedBy: string
+  updatedAt: string
+  /** 현재 revision 이 확정된 경우에만 값이 있음 */
+  confirmedBy?: string
+  confirmedAt?: string
+  /** 지금까지 확정된 revision 목록 (오래된 순) */
+  confirmations: ReportConfirmation[]
 }
 
 /* ---------------- 부품 / 발주 ---------------- */
@@ -283,13 +316,13 @@ export interface PurchaseOrder {
   requestedBy?: string
   requestedAt?: string
   requestComment?: string
-  decision: Decision // 부품 담당자 결정
+  decision: Decision // 본사 품질 담당자 결정
   createdAt: string
 }
 
 /* ---------------- 승인 이력 ---------------- */
 
-export type ApprovalTarget = 'DIAGNOSIS' | 'TECH_REVIEW' | 'ORDER' | 'PHOTO' | 'SYSTEM'
+export type ApprovalTarget = 'DIAGNOSIS' | 'REPORT' | 'ORDER' | 'PHOTO' | 'SYSTEM'
 export type ApprovalAction =
   | 'CREATED'
   | 'AI_GENERATED'
@@ -300,6 +333,7 @@ export type ApprovalAction =
   | 'REANALYSIS_REQUESTED'
   | 'HQ_REVIEW_REQUESTED'
   | 'SUBMITTED'
+  | 'DRAFT_SAVED'
   | 'PHOTO_ADDED'
   | 'ORDER_REQUESTED'
   | 'COMMENTED'
@@ -366,8 +400,10 @@ export interface RepairQuery {
 
 export interface RepairSummaryCounts {
   needPhoto: number
+  /** 진단 초안 확인 대기 (DIAGNOSIS_COMPLETED) */
   technicianReview: number
-  hqApproval: number
+  /** 진단 확인 후 리포트 확정 전 (TECHNICIAN_REVIEW) */
+  reportPending: number
   completed: number
   analyzing: number
   manualReview: number

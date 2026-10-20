@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* 승인 이력 타임라인 — AI 행위와 사람 행위를 아이콘·색·라벨로 구분 */
 import { computed } from 'vue'
-import { Sparkles, UserCheck, UserX, MessageSquare, RotateCw, Send, Camera, Package, FilePlus, Building2 } from 'lucide-vue-next'
+import { Sparkles, UserCheck, UserX, MessageSquare, RotateCw, Send, Save, Camera, Package, FilePlus, Building2 } from 'lucide-vue-next'
 import { ROLE_LABEL } from '@/constants/status'
 import type { ApprovalAction, ApprovalRecord } from '@/types'
 import { formatDateTime } from '@/utils/format'
@@ -19,11 +19,12 @@ const ACTION: Record<ApprovalAction, { label: string; icon: unknown; tone: strin
   REANALYSIS_REQUESTED: { label: '재분석 요청', icon: RotateCw, tone: 'ai' },
   HQ_REVIEW_REQUESTED: { label: '본사 검토 요청', icon: Building2, tone: 'warning' },
   SUBMITTED: { label: '제출', icon: Send, tone: 'info' },
+  DRAFT_SAVED: { label: '초안 저장', icon: Save, tone: 'info' },
   PHOTO_ADDED: { label: '추가 사진', icon: Camera, tone: 'info' },
   ORDER_REQUESTED: { label: '발주 요청', icon: Package, tone: 'warning' },
   COMMENTED: { label: '의견', icon: MessageSquare, tone: 'neutral' },
 }
-const TARGET = { DIAGNOSIS: '진단', TECH_REVIEW: '수리 결과', ORDER: '발주', PHOTO: '사진', SYSTEM: '접수' }
+const TARGET = { DIAGNOSIS: '진단', REPORT: '수리 리포트', ORDER: '발주', PHOTO: '사진', SYSTEM: '접수' }
 </script>
 
 <template>

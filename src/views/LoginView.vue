@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { CircleAlert, LogIn, Wrench, Building2, Package, Eye, EyeOff } from 'lucide-vue-next'
+import { CircleAlert, LogIn, Wrench, Building2, Eye, EyeOff } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import { toErrorMessage, USE_MOCK } from '@/api'
 import type { Role } from '@/types'
@@ -16,9 +16,8 @@ const loading = ref(false)
 const showPw = ref(false)
 
 const DEMO: { id: string; role: Role; label: string; desc: string; icon: unknown }[] = [
-  { id: 'T1001', role: 'TECHNICIAN', label: '서비스센터 기사', desc: '접수 · 진단 확인 · 수리 결과', icon: Wrench },
-  { id: 'Q2001', role: 'QUALITY', label: '본사 품질 담당자', desc: '승인 · 수동 검토 · 대시보드', icon: Building2 },
-  { id: 'P3001', role: 'PARTS', label: '부품 담당자', desc: '재고 · 발주 승인', icon: Package },
+  { id: 'T1001', role: 'TECHNICIAN', label: '서비스센터 기사', desc: '접수 · 사진 · 진단 확인 · 발주 요청 · 리포트 확정', icon: Wrench },
+  { id: 'Q2001', role: 'QUALITY_MANAGER', label: '본사 품질 담당자', desc: '발주 승인 · 고장 통계', icon: Building2 },
 ]
 
 function validate() {
@@ -62,9 +61,9 @@ function fill(id: string) {
         <li><span>2</span>AI Agent 분석</li>
         <li><span>3</span>기사 확인 · 승인</li>
         <li><span>4</span>부품 조회 · 발주</li>
-        <li><span>5</span>수리 완료 · 본사 승인</li>
+        <li><span>5</span>수리 리포트 확정</li>
       </ol>
-      <p class="rule">AI가 만든 결과는 모두 <b>초안</b>입니다. 관리자가 확인·승인한 내용만 고장 데이터베이스에 반영됩니다.</p>
+      <p class="rule">AI가 만든 결과는 모두 <b>초안</b>입니다. 담당 기사가 확정한 수리 리포트만 고장 데이터베이스에 반영됩니다.</p>
     </section>
 
     <section class="panel">

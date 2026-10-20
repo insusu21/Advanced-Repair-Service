@@ -28,9 +28,9 @@ const kpis = computed(() =>
   d.value
     ? [
         { label: '전체 접수 건수', value: formatNumber(d.value.totalReceived), unit: '건', icon: ClipboardList, tone: 'info', hint: d.value.periodLabel },
-        { label: '수리 완료 건수', value: formatNumber(d.value.completed), unit: '건', icon: CircleCheck, tone: 'success', hint: '본사 승인 완료 기준' },
+        { label: '수리 완료 건수', value: formatNumber(d.value.completed), unit: '건', icon: CircleCheck, tone: 'success', hint: '리포트 확정 기준' },
         { label: 'AI 진단 성공률', value: d.value.aiSuccessRate.toFixed(1), unit: '%', icon: Sparkles, tone: 'ai', hint: '분석 실패·판독 불가 제외 비율' },
-        { label: 'AI 진단 ↔ 실제 원인 일치율', value: d.value.aiMatchRate.toFixed(1), unit: '%', icon: Target, tone: d.value.aiMatchRate >= 80 ? 'success' : 'warning', hint: '기사 확인 + 본사 승인 결과 기준' },
+        { label: 'AI 진단 ↔ 실제 원인 일치율', value: d.value.aiMatchRate.toFixed(1), unit: '%', icon: Target, tone: d.value.aiMatchRate >= 80 ? 'success' : 'warning', hint: '기사가 확정한 리포트 기준' },
       ]
     : [],
 )
@@ -41,7 +41,7 @@ const kpis = computed(() =>
     <div class="page-head">
       <div>
         <h1>품질 대시보드</h1>
-        <p class="sub"><ShieldCheck :size="16" /> 본사 승인을 거친 고장 데이터만 집계합니다. 그래프 항목을 누르면 관련 수리 목록을 볼 수 있습니다.</p>
+        <p class="sub"><ShieldCheck :size="16" /> 기사가 확정한 수리 리포트만 집계합니다. 그래프 항목을 누르면 관련 수리 목록을 볼 수 있습니다.</p>
       </div>
       <div class="row">
         <label for="period" class="label">기간</label>
@@ -54,7 +54,7 @@ const kpis = computed(() =>
 
     <div v-if="store.loading && !d" class="grid-4"><div v-for="i in 4" :key="i" class="card card-pad"><SkeletonBlock :lines="2" :height="28" /></div></div>
     <StateView v-else-if="store.error && !d" state="error" :message="store.error" class="card" @retry="store.fetch()" />
-    <StateView v-else-if="d && !d.approvedCount" state="empty" title="승인된 고장 데이터가 없습니다" message="본사 승인이 완료되면 통계가 표시됩니다." class="card" />
+    <StateView v-else-if="d && !d.approvedCount" state="empty" title="확정된 고장 데이터가 없습니다" message="기사가 수리 리포트를 확정하면 통계가 표시됩니다." class="card" />
 
     <template v-else-if="d">
       <div class="grid-4">
@@ -145,7 +145,7 @@ const kpis = computed(() =>
         <StateView v-else-if="!store.records.length" state="empty" title="해당 조건의 수리 건이 없습니다" compact />
         <div v-else class="table-wrap scroll">
           <table class="table">
-            <thead><tr><th>수리 ID</th><th>모델</th><th>교체 부품</th><th>실제 원인 (승인)</th><th>지점</th><th>생산 공장</th><th>AI 일치</th><th>승인일</th></tr></thead>
+            <thead><tr><th>수리 ID</th><th>모델</th><th>교체 부품</th><th>실제 원인 (확정)</th><th>지점</th><th>생산 공장</th><th>AI 일치</th><th>확정일</th></tr></thead>
             <tbody>
               <tr v-for="r in store.records.slice(0, 100)" :key="r.repairId">
                 <td class="mono">{{ repairId(r.repairId) }}</td>

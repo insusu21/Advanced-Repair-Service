@@ -7,13 +7,12 @@ import {
   Camera,
   Sparkles,
   UserCheck,
-  Building2,
   CircleCheck,
   CircleX,
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AnalysisStage, RepairStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
+import type { AiAcceptance, AnalysisStage, FaultArea, RepairOutcome, RepairStatus, ReportStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -32,12 +31,11 @@ export const STATUS_META: Record<RepairStatus, StatusMeta> = {
   ANALYZING: { label: 'AI 분석 중', description: '전문 Agent 가 분석 중', tone: 'ai', icon: Loader },
   ADDITIONAL_INFO_NEEDED: { label: '추가 사진 필요', description: 'AI 가 추가 사진을 요청함', tone: 'warning', icon: Camera },
   DIAGNOSIS_COMPLETED: { label: '진단 초안 도착', description: '기사 확인이 필요한 AI 초안', tone: 'ai', icon: Sparkles },
-  TECHNICIAN_REVIEW: { label: '기사 검토·수리 중', description: '기사가 진단을 확인하고 수리 진행', tone: 'warning', icon: UserCheck },
-  HQ_APPROVAL: { label: '본사 승인 대기', description: '품질 담당자 승인 대기', tone: 'warning', icon: Building2 },
+  TECHNICIAN_REVIEW: { label: '기사 수리·리포트 작성', description: '진단 확인 후 수리하고 리포트를 확정할 차례', tone: 'warning', icon: UserCheck },
   APPROVED: { label: '승인 완료', description: '고장 DB·대시보드 반영됨', tone: 'success', icon: CircleCheck },
   REJECTED: { label: '반려', description: '반려되어 반영되지 않음', tone: 'danger', icon: CircleX },
   MANUAL_REVIEW: { label: '본사 수동 검토', description: '사람이 직접 진단하는 건', tone: 'danger', icon: Hand },
-  CLOSED: { label: '종결', description: '처리 종료', tone: 'neutral', icon: Archive },
+  CLOSED: { label: '리포트 확정', description: '기사가 리포트를 확정해 고장 DB·대시보드에 반영됨', tone: 'success', icon: Archive },
 }
 
 export const STATUS_ORDER: RepairStatus[] = [
@@ -48,7 +46,6 @@ export const STATUS_ORDER: RepairStatus[] = [
   'ADDITIONAL_INFO_NEEDED',
   'DIAGNOSIS_COMPLETED',
   'TECHNICIAN_REVIEW',
-  'HQ_APPROVAL',
   'APPROVED',
   'REJECTED',
   'MANUAL_REVIEW',
@@ -59,7 +56,7 @@ export const STATUS_ORDER: RepairStatus[] = [
 export const STATUS_GROUPS: { key: StatusGroupKey; label: string; statuses: RepairStatus[] }[] = [
   { key: 'AI_ANALYSIS', label: 'AI 분석', statuses: ['RECEIVED', 'QUEUED', 'ANALYZING'] },
   { key: 'TECHNICIAN', label: '기사 처리', statuses: ['ADDITIONAL_INFO_NEEDED', 'DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'REJECTED'] },
-  { key: 'HQ', label: '본사 검토', statuses: ['HQ_APPROVAL', 'MANUAL_REVIEW'] },
+  { key: 'HQ', label: '본사 검토', statuses: ['MANUAL_REVIEW'] },
   { key: 'DONE', label: '완료', statuses: ['APPROVED', 'CLOSED'] },
 ]
 
@@ -88,8 +85,7 @@ export const STAGE_ORDER: AnalysisStage[] = [
 
 export const ROLE_LABEL: Record<Role, string> = {
   TECHNICIAN: '서비스센터 기사',
-  QUALITY: '본사 품질 담당자',
-  PARTS: '부품 담당자',
+  QUALITY_MANAGER: '본사 품질 담당자',
 }
 
 export const URGENCY_META: Record<Urgency, { label: string; tone: Tone }> = {
@@ -111,6 +107,27 @@ export const DECISION_META: Record<DecisionState, { label: string; tone: Tone }>
   REJECTED: { label: '반려됨', tone: 'danger' },
   CHANGE_REQUESTED: { label: '수정 요청됨', tone: 'warning' },
   REANALYSIS_REQUESTED: { label: '재분석 요청됨', tone: 'info' },
+}
+
+/* ---------------- 수리 리포트 ---------------- */
+export const FAULT_AREA_LABEL: Record<FaultArea, string> = { PCB: 'PCB', MOTOR: '모터', SW: '소프트웨어', OTHER: '기타' }
+
+export const OUTCOME_META: Record<RepairOutcome, { label: string; description: string; tone: Tone }> = {
+  FIXED: { label: '수리 완료', description: '고장 부위를 수리·교체해 정상 동작', tone: 'success' },
+  NOT_FIXED: { label: '수리 실패', description: '수리했으나 증상이 남음', tone: 'danger' },
+  NO_FAULT_FOUND: { label: '고장 없음', description: '점검 결과 이상을 찾지 못함', tone: 'neutral' },
+}
+
+export const AI_ACCEPTANCE_META: Record<AiAcceptance, { label: string; description: string; tone: Tone }> = {
+  ACCEPTED: { label: '맞음', description: 'AI 진단 원인과 실제 원인이 같음', tone: 'success' },
+  PARTIAL: { label: '일부 맞음', description: '원인은 비슷하나 부품·범위가 다름', tone: 'warning' },
+  REJECTED: { label: '틀림', description: '실제 원인이 다름', tone: 'danger' },
+  NOT_AVAILABLE: { label: 'AI 진단 없음', description: 'AI 진단 없이 진행한 건', tone: 'neutral' },
+}
+
+export const REPORT_STATUS_META: Record<ReportStatus, { label: string; tone: Tone }> = {
+  DRAFT: { label: '초안', tone: 'warning' },
+  CONFIRMED: { label: '확정', tone: 'success' },
 }
 
 export const MAX_PHOTO_REQUESTS = 3

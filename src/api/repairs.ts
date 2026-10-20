@@ -3,9 +3,10 @@ import * as mock from '@/mocks/handlers'
 import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
   ApprovalRequest,
+  ConfirmReportRequest,
   CreateRepairRequest,
   ReanalysisRequest,
-  TechnicianReviewRequest,
+  SaveReportDraftRequest,
   UploadImageRequest,
 } from '@/types/api'
 
@@ -93,20 +94,15 @@ export const repairApi = {
     return (await http.post<Repair>(`/repairs/${id}/reanalysis`, req)).data
   },
 
-  /** POST /api/repairs/{id}/technician-review (multipart: json + 전·후 사진) */
-  async technicianReview(id: number, req: TechnicianReviewRequest): Promise<Repair> {
-    if (USE_MOCK) return mockDelay(() => mock.technicianReview(id, req), 600)
-    const f = new FormData()
-    const { beforeImages, afterImages, ...body } = req
-    f.append('review', new Blob([JSON.stringify(body)], { type: 'application/json' }))
-    beforeImages.forEach((i) => f.append('beforeImages', i.file))
-    afterImages.forEach((i) => f.append('afterImages', i.file))
-    return (await http.post<Repair>(`/repairs/${id}/technician-review`, f)).data
+  /** PUT /api/repairs/{id}/report — 리포트 초안 저장 (version 불일치 시 409 REPORT_VERSION) */
+  async saveReportDraft(id: number, req: SaveReportDraftRequest): Promise<Repair> {
+    if (USE_MOCK) return mockDelay(() => mock.saveReportDraft(id, req), 400)
+    return (await http.put<Repair>(`/repairs/${id}/report`, req)).data
   },
 
-  /** GET /api/approvals — 본사 승인 대기 (HQ_APPROVAL + MANUAL_REVIEW) */
-  async approvalQueue(): Promise<Repair[]> {
-    if (USE_MOCK) return mockDelay(() => mock.listApprovalQueue())
-    return (await http.get<Repair[]>('/approvals')).data
+  /** POST /api/repairs/{id}/report/confirm — 리포트 확정 → 고장 DB·대시보드 반영, 상태 CLOSED */
+  async confirmReport(id: number, req: ConfirmReportRequest): Promise<Repair> {
+    if (USE_MOCK) return mockDelay(() => mock.confirmReport(id, req), 500)
+    return (await http.post<Repair>(`/repairs/${id}/report/confirm`, req)).data
   },
 }

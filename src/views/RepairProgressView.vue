@@ -26,7 +26,7 @@ const router = useRouter()
 const dlg = useReasonDialog<'reanalyze' | 'hq'>()
 
 const running = computed(() => repair.value?.stages.find((s) => s.state === 'RUNNING'))
-const done = computed(() => !!repair.value && ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED'].includes(repair.value.status))
+const done = computed(() => !!repair.value && ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED'].includes(repair.value.status))
 const failed = computed(() => !!repair.value?.analysisError)
 const isTech = computed(() => auth.role === 'TECHNICIAN')
 const sse = computed(() => ({

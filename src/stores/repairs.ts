@@ -5,7 +5,7 @@ import { repairApi, toErrorMessage } from '@/api'
 import { connectAllEvents, type SseConnection } from '@/services/sse'
 import type { Repair, RepairEvent, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 
-const EMPTY_COUNTS: RepairSummaryCounts = { needPhoto: 0, technicianReview: 0, hqApproval: 0, completed: 0, analyzing: 0, manualReview: 0 }
+const EMPTY_COUNTS: RepairSummaryCounts = { needPhoto: 0, technicianReview: 0, reportPending: 0, completed: 0, analyzing: 0, manualReview: 0 }
 
 export const useRepairListStore = defineStore('repairList', () => {
   const items = ref<Repair[]>([])

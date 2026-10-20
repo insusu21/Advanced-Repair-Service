@@ -15,8 +15,8 @@ import type {
   PurchaseOrder,
   Repair,
   RepairImage,
+  RepairReport,
   RepairStatus,
-  TechnicianReview,
   Urgency,
   User,
 } from '@/types'
@@ -27,8 +27,7 @@ import { isoAgo } from '@/utils/format'
 export const USERS: (User & { password: string })[] = [
   { employeeId: 'T1001', password: '1234', name: '김정훈', role: 'TECHNICIAN', branch: '강남 서비스센터' },
   { employeeId: 'T1002', password: '1234', name: '박민수', role: 'TECHNICIAN', branch: '부산 서비스센터' },
-  { employeeId: 'Q2001', password: '1234', name: '이서연', role: 'QUALITY', branch: '본사 품질혁신팀' },
-  { employeeId: 'P3001', password: '1234', name: '최도윤', role: 'PARTS', branch: '본사 부품운영팀' },
+  { employeeId: 'Q2001', password: '1234', name: '이서연', role: 'QUALITY_MANAGER', branch: '본사 품질혁신팀' },
 ]
 
 /* ---------------- 제품 카탈로그 (시리얼 → 제품 정보) ---------------- */
@@ -162,7 +161,7 @@ function baseImages(prefix: string, minutesAgo: number): RepairImage[] {
 
 /* ---------------- 단계 상태 ---------------- */
 export function stagesFor(status: RepairStatus, skipSw = false): AnalysisStageState[] {
-  const done = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW'].includes(status)
+  const done = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW'].includes(status)
   return STAGE_ORDER.map((stage) => ({
     stage,
     state: done ? (stage === 'SW_ANALYSIS' && skipSw ? 'SKIPPED' : 'DONE') : 'PENDING',
@@ -368,17 +367,22 @@ const SEEDS: Seed[] = [
   { id: 103, serial: 'RC2026000415', symptom: '충전 거치대에서 충전되지 않음', errorCodes: ['E401'], status: 'ANALYZING', tech: KIM, minutesAgo: 12, urgency: 'MEDIUM', scenario: 'NORMAL' },
   { id: 111, serial: 'RC2026000501', symptom: '전원 버튼을 눌러도 반응 없음', errorCodes: [], status: 'QUEUED', tech: KIM, minutesAgo: 4, urgency: 'LOW', scenario: 'FAIL' },
   { id: 104, serial: 'RC2025009921', symptom: '바퀴 회전이 간헐적으로 멈춤', errorCodes: ['E210'], status: 'TECHNICIAN_REVIEW', tech: KIM, minutesAgo: 60 * 26, urgency: 'MEDIUM', diag: 'WHEEL_SENSOR' },
-  { id: 105, serial: 'RC2025008812', symptom: '청소 시작 3분 후 소음과 함께 정지', errorCodes: ['E103'], status: 'HQ_APPROVAL', tech: KIM, minutesAgo: 60 * 50, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
-  { id: 106, serial: 'RC2025007710', symptom: '전원 투입 직후 재부팅 반복', errorCodes: ['E501'], status: 'HQ_APPROVAL', tech: PARK, minutesAgo: 60 * 30, urgency: 'HIGH', diag: 'PCB' },
+  { id: 105, serial: 'RC2025008812', symptom: '청소 시작 3분 후 소음과 함께 정지', errorCodes: ['E103'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 50, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
+  { id: 106, serial: 'RC2025007710', symptom: '전원 투입 직후 재부팅 반복', errorCodes: ['E501'], status: 'CLOSED', tech: PARK, minutesAgo: 60 * 30, urgency: 'HIGH', diag: 'PCB' },
   { id: 113, serial: 'RC2026000610', symptom: '물걸레 모듈 장착 후 주행 멈춤', errorCodes: ['E103'], status: 'DIAGNOSIS_COMPLETED', tech: PARK, minutesAgo: 70, urgency: 'MEDIUM', diag: 'WHEEL_SENSOR' },
-  { id: 107, serial: 'RC2025006601', symptom: '소음 후 주행 불가', errorCodes: ['E103'], status: 'APPROVED', tech: KIM, minutesAgo: 60 * 24 * 4, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
-  { id: 112, serial: 'RC2025002205', symptom: '좌측 바퀴 헛돎', errorCodes: ['E210'], status: 'APPROVED', tech: PARK, minutesAgo: 60 * 24 * 6, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
-  { id: 108, serial: 'RC2025005502', symptom: '청소 중 정지 후 경고음', errorCodes: ['E103'], status: 'REJECTED', tech: KIM, minutesAgo: 60 * 24 * 3, urgency: 'MEDIUM', diag: 'MOTOR_HOUSING' },
+  { id: 107, serial: 'RC2025006601', symptom: '소음 후 주행 불가', errorCodes: ['E103'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 4, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
+  { id: 112, serial: 'RC2025002205', symptom: '좌측 바퀴 헛돎', errorCodes: ['E210'], status: 'CLOSED', tech: PARK, minutesAgo: 60 * 24 * 6, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
+  { id: 108, serial: 'RC2025005502', symptom: '청소 중 정지 후 경고음', errorCodes: ['E103'], status: 'TECHNICIAN_REVIEW', tech: KIM, minutesAgo: 60 * 24 * 3, urgency: 'MEDIUM', diag: 'MOTOR_HOUSING' },
   { id: 109, serial: 'RC2025004403', symptom: '간헐적 전원 꺼짐, 재현 어려움', errorCodes: [], status: 'MANUAL_REVIEW', tech: PARK, minutesAgo: 60 * 24 * 2, urgency: 'MEDIUM', photoRequestCount: 3 },
   // 같은 제품(RC2026000187)의 이전 수리 건: 시리얼은 겹치므로 수리 ID 로 구분
   { id: 98, serial: 'RC2026000187', symptom: '흡입력 약해짐, 브러시 회전 느림', errorCodes: ['E302'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 45, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
   { id: 110, serial: 'RC2025003304', symptom: '흡입력 저하', errorCodes: ['E302'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 12, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
 ]
+
+/** 리포트 초안 저장(r1)까지 진행된 시드 — 확정 전 상태 데모용 */
+const DRAFT_SEEDS = [108]
+/** 확정 후 수정·재확정(r2)한 시드 — 확정 이력 데모용 */
+const REVISED_SEEDS = [106]
 
 function history(seed: Seed): ApprovalRecord[] {
   const r: ApprovalRecord[] = [
@@ -387,18 +391,17 @@ function history(seed: Seed): ApprovalRecord[] {
   if (seed.diag) {
     r.push({ id: `h${seed.id}-2`, target: 'DIAGNOSIS', action: 'AI_GENERATED', actor: 'AI Orchestrator', actorRole: 'AI', at: isoAgo(seed.minutesAgo - 3), comment: 'AI 진단 초안 v1 생성' })
   }
-  const after = ['TECHNICIAN_REVIEW', 'HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED']
-  if (after.includes(seed.status)) {
+  if (['TECHNICIAN_REVIEW', 'CLOSED'].includes(seed.status)) {
     r.push({ id: `h${seed.id}-3`, target: 'DIAGNOSIS', action: 'CONFIRMED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo - 20), comment: '진단 내용 확인, 점검 진행' })
   }
-  if (['HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED'].includes(seed.status)) {
-    r.push({ id: `h${seed.id}-4`, target: 'TECH_REVIEW', action: 'SUBMITTED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo - 240), comment: '수리 결과 입력 및 본사 승인 요청' })
+  if (DRAFT_SEEDS.includes(seed.id)) {
+    r.push({ id: `h${seed.id}-4`, target: 'REPORT', action: 'DRAFT_SAVED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo - 240), comment: '리포트 초안 r1 저장' })
   }
-  if (seed.status === 'APPROVED' || seed.status === 'CLOSED') {
-    r.push({ id: `h${seed.id}-5`, target: 'TECH_REVIEW', action: 'APPROVED', actor: '이서연', actorRole: 'QUALITY', at: isoAgo(seed.minutesAgo - 600), comment: '고장 DB 반영 승인' })
-  }
-  if (seed.status === 'REJECTED') {
-    r.push({ id: `h${seed.id}-5`, target: 'TECH_REVIEW', action: 'REJECTED', actor: '이서연', actorRole: 'QUALITY', at: isoAgo(seed.minutesAgo - 600), comment: '수리 후 사진 누락 · 교체 부품 품번 불일치' })
+  if (seed.status === 'CLOSED') {
+    r.push({ id: `h${seed.id}-4`, target: 'REPORT', action: 'CONFIRMED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo - 240), comment: '리포트 r1 확정 · 고장 DB 반영' })
+    if (REVISED_SEEDS.includes(seed.id)) {
+      r.push({ id: `h${seed.id}-5`, target: 'REPORT', action: 'CONFIRMED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo - 600), comment: '리포트 r2 확정 · 실제 원인 정정 (고장 DB 반영 내용 교체)' })
+    }
   }
   if (seed.status === 'MANUAL_REVIEW') {
     r.push(
@@ -408,33 +411,63 @@ function history(seed: Seed): ApprovalRecord[] {
   return r
 }
 
-function techReview(seed: Seed): TechnicianReview | undefined {
-  if (!['HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED'].includes(seed.status)) return undefined
-  const mismatch = seed.id === 106
-  const approved = seed.status === 'APPROVED' || seed.status === 'CLOSED'
-  const rejected = seed.status === 'REJECTED'
+function seedReport(seed: Seed): RepairReport | undefined {
+  const draft = DRAFT_SEEDS.includes(seed.id)
+  if (seed.status !== 'CLOSED' && !draft) return undefined
+  const revised = REVISED_SEEDS.includes(seed.id)
   const motor = seed.diag === 'MOTOR_HOUSING'
+  const pcb = seed.diag === 'PCB'
+  const confirmedAt = isoAgo(seed.minutesAgo - 240)
+  const lastAt = revised ? isoAgo(seed.minutesAgo - 600) : confirmedAt
+  const content: RepairReport['content'] = pcb
+    ? {
+        // 106: AI 는 PCB 를 지목했지만 실제로는 배터리 커넥터 문제 → r2 에서 원인 정정
+        actualCause: '배터리 커넥터 접촉 불량 (PCB 정상)',
+        actualAction: '배터리 커넥터 세척 및 재체결, PCB 교체하지 않음',
+        technicianOpinion: 'PCB 변색은 생산 시 마킹 잉크로 확인. 실제로는 배터리 커넥터 산화로 인한 순간 전원 차단이었음. AI가 PCB 변색을 과대 판단.',
+        faults: [{ area: 'OTHER' }],
+        repairSuccessful: true,
+        outcome: 'FIXED',
+        aiAcceptance: 'REJECTED',
+      }
+    : motor
+      ? {
+          actualCause: '모터 하우징 변형',
+          actualAction: '모터 어셈블리 교체 후 RPM 테스트 정상 확인',
+          technicianOpinion: '진단대로 하단 연결부 들뜸 확인. 교체 후 정상 동작.',
+          faults: [{ area: 'MOTOR', partId: 'P-103' }],
+          repairSuccessful: true,
+          outcome: 'FIXED',
+          aiAcceptance: 'ACCEPTED',
+        }
+      : {
+          actualCause: '휠 회전 센서 접촉 불량',
+          actualAction: '센서 교체 후 주행 테스트',
+          technicianOpinion: draft ? '센서 교체 완료, 주행 테스트 결과 확인 후 확정 예정' : '센서 커넥터 산화 확인. 교체 후 정상.',
+          faults: [{ area: 'MOTOR', partId: 'P-221' }],
+          repairSuccessful: !draft,
+          outcome: draft ? 'NOT_FIXED' : 'FIXED',
+          aiAcceptance: 'ACCEPTED',
+        }
+  if (draft) {
+    return { repairId: seed.id, version: 1, revision: 1, status: 'DRAFT', content, createdBy: seed.tech.name, updatedBy: seed.tech.name, updatedAt: isoAgo(seed.minutesAgo - 240), confirmations: [] }
+  }
+  const confirmations = [{ revision: 1, confirmedBy: seed.tech.name, confirmedAt }]
+  if (revised) confirmations.push({ revision: 2, confirmedBy: seed.tech.name, confirmedAt: lastAt })
+  const revision = confirmations.length
   return {
-    aiMatch: mismatch ? 'MISMATCH' : 'MATCH',
-    actualCause: mismatch ? '배터리 커넥터 접촉 불량 (PCB 정상)' : motor ? '모터 하우징 변형' : seed.diag === 'PCB' ? '메인 PCB 전원부 소손' : '휠 회전 센서 접촉 불량',
-    replacedParts: mismatch
-      ? []
-      : motor
-        ? [{ partNo: 'RM-MT-103', partName: '모터 어셈블리', quantity: 1 }]
-        : [{ partNo: 'RM-SN-221', partName: '휠 회전 센서', quantity: 1 }],
-    repairMethod: mismatch ? '배터리 커넥터 세척 및 재체결, PCB 교체하지 않음' : motor ? '모터 어셈블리 교체 후 RPM 테스트 정상 확인' : '센서 교체 후 주행 테스트',
-    comment: mismatch
-      ? 'PCB 변색은 생산 시 마킹 잉크로 확인. 실제로는 배터리 커넥터 산화로 인한 순간 전원 차단이었음. AI가 PCB 변색을 과대 판단.'
-      : '진단대로 하단 연결부 들뜸 확인. 교체 후 정상 동작.',
-    beforeImages: [{ id: `r${seed.id}-before`, kind: 'BEFORE', url: '/mock/motor.svg', name: 'before.jpg', uploadedAt: isoAgo(seed.minutesAgo - 200) }],
-    afterImages: [{ id: `r${seed.id}-after`, kind: 'AFTER', url: '/mock/repair-after.svg', name: 'after.jpg', uploadedAt: isoAgo(seed.minutesAgo - 230) }],
-    submittedBy: seed.tech.name,
-    submittedAt: isoAgo(seed.minutesAgo - 240),
-    hqDecision: approved
-      ? { state: 'APPROVED', decidedBy: '이서연', decidedByRole: 'QUALITY', decidedAt: isoAgo(seed.minutesAgo - 600), comment: '고장 DB 반영 승인' }
-      : rejected
-        ? { state: 'REJECTED', decidedBy: '이서연', decidedByRole: 'QUALITY', decidedAt: isoAgo(seed.minutesAgo - 600), comment: '수리 후 사진 누락 · 교체 부품 품번 불일치' }
-        : { state: 'PENDING' },
+    repairId: seed.id,
+    // 확정본 1개 = 저장 1 + 확정 1, 재확정이면 그만큼 더
+    version: revision * 2,
+    revision,
+    status: 'CONFIRMED',
+    content,
+    createdBy: seed.tech.name,
+    updatedBy: seed.tech.name,
+    updatedAt: lastAt,
+    confirmedBy: seed.tech.name,
+    confirmedAt: lastAt,
+    confirmations,
   }
 }
 
@@ -470,7 +503,7 @@ export function createSeed(): MockDbState {
       stages: stagesFor(status),
       progress: s.diag ? 100 : 0,
       history: history(s),
-      technicianReview: techReview(s),
+      report: seedReport(s),
       mockScenario: s.scenario,
     }
   })
@@ -495,7 +528,7 @@ export function createSeed(): MockDbState {
     if (!s.diag) continue
     const repair = repairs.find((r) => r.id === s.id)!
     const d = buildDiagnosis(repair, s.diag, 1, s.minutesAgo - 3)
-    if (['TECHNICIAN_REVIEW', 'HQ_APPROVAL', 'APPROVED', 'REJECTED', 'CLOSED'].includes(s.status)) {
+    if (['TECHNICIAN_REVIEW', 'CLOSED'].includes(s.status)) {
       d.technicianDecision = { state: 'APPROVED', decidedBy: s.tech.name, decidedByRole: 'TECHNICIAN', decidedAt: isoAgo(s.minutesAgo - 20), comment: '진단 내용 확인, 점검 진행' }
     }
     diagnoses[s.id] = [d]
@@ -528,22 +561,21 @@ export function createSeed(): MockDbState {
       id: 'PO-105-1', repairId: 105, receiptNo: repairs.find((r) => r.id === 105)!.receiptNo,
       partId: 'P-103', partNo: 'RM-MT-103', partName: '모터 어셈블리', quantity: 1, fromWarehouse: '수원 창고',
       aiReason: '하우징 변형은 어셈블리 단위 교체 필요', aiConfidence: 87, sourceIds: ['S1', 'S3'],
-      status: 'APPROVED', requestedBy: '김정훈', requestedAt: isoAgo(60 * 48), decision: { state: 'APPROVED', decidedBy: '최도윤', decidedByRole: 'PARTS', decidedAt: isoAgo(60 * 47), comment: '수원 창고 출고 지시' }, createdAt: isoAgo(60 * 49),
+      status: 'APPROVED', requestedBy: '김정훈', requestedAt: isoAgo(60 * 48), decision: { state: 'APPROVED', decidedBy: '이서연', decidedByRole: 'QUALITY_MANAGER', decidedAt: isoAgo(60 * 47), comment: '수원 창고 출고 지시' }, createdAt: isoAgo(60 * 49),
     },
     {
       id: 'PO-106-1', repairId: 106, receiptNo: repairs.find((r) => r.id === 106)!.receiptNo,
       partId: 'P-310', partNo: 'RM-PC-310', partName: '메인 PCB', quantity: 1, fromWarehouse: '수원 창고',
       aiReason: '전원부 소손 의심 · 보드 단위 교체', aiConfidence: 68, sourceIds: ['S1'],
-      status: 'REJECTED', requestedBy: '박민수', requestedAt: isoAgo(60 * 29), decision: { state: 'REJECTED', decidedBy: '최도윤', decidedByRole: 'PARTS', decidedAt: isoAgo(60 * 28), comment: '재고 0개 · 본사 검토 결과 확인 후 재요청 바랍니다' }, createdAt: isoAgo(60 * 29),
+      status: 'REJECTED', requestedBy: '박민수', requestedAt: isoAgo(60 * 29), decision: { state: 'REJECTED', decidedBy: '이서연', decidedByRole: 'QUALITY_MANAGER', decidedAt: isoAgo(60 * 28), comment: '재고 0개 · 본사 검토 결과 확인 후 재요청 바랍니다' }, createdAt: isoAgo(60 * 29),
     },
   ]
 
   const notifications: Notification[] = [
     { id: 'N1', title: 'AI 진단 초안 도착', body: '수리 #101 (RC-A100) 진단 초안을 확인해 주세요.', at: isoAgo(90), read: false, link: '/repairs/101/diagnosis', roles: ['TECHNICIAN'] },
     { id: 'N2', title: '추가 사진 요청', body: '수리 #102 모터 하단 연결부 사진이 필요합니다.', at: isoAgo(130), read: false, link: '/repairs/102/progress', roles: ['TECHNICIAN'] },
-    { id: 'N3', title: '본사 승인 대기 2건', body: '기사 수리 결과 검토가 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/approvals', roles: ['QUALITY'] },
-    { id: 'N4', title: '수동 검토 전환', body: '수리 #109 추가 사진 3회 초과로 수동 검토로 전환되었습니다.', at: isoAgo(60 * 30), read: false, link: '/repairs/109/diagnosis', roles: ['QUALITY'] },
-    { id: 'N5', title: '발주 요청 1건', body: '휠 회전 센서(RM-SN-221) 발주 승인이 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/parts', roles: ['PARTS'] },
+    { id: 'N4', title: '수동 검토 전환', body: '수리 #109 추가 사진 3회 초과로 수동 검토로 전환되었습니다.', at: isoAgo(60 * 30), read: false, link: '/repairs/109/diagnosis', roles: ['QUALITY_MANAGER'] },
+    { id: 'N5', title: '발주 요청 1건', body: '휠 회전 센서(RM-SN-221) 발주 승인이 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/order-approvals', roles: ['QUALITY_MANAGER'] },
   ]
 
   return { repairs, diagnoses, photoRequests, orders, parts: structuredClone(PARTS), notifications, seq: 200 }
