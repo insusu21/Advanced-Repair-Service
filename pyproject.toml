@@ -1,0 +1,20 @@
+[project]
+name = "skeleton-agent"
+version = "0.2.0"
+description = "로봇청소기 고장 진단 LangGraph 에이전트 뼈대 (Kafka + MCP + GPT)"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "aiokafka>=0.12",
+    "fastmcp>=4.1.1",
+    "httpx>=0.28",
+    "langchain-openai>=1",
+    "langgraph>=1,<2",
+    "python-dotenv>=1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "jsonschema>=4"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
