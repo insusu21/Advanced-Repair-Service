@@ -29,6 +29,7 @@ defineProps<{ repair: Repair; compact?: boolean }>()
       <div v-if="!compact"><dt>생산 공장</dt><dd>{{ repair.product.factory }}</dd></div>
       <div v-if="!compact"><dt>펌웨어</dt><dd>{{ repair.product.firmware }}</dd></div>
       <div class="wide"><dt>고장 증상</dt><dd>{{ repair.symptom }}</dd></div>
+      <div v-if="repair.technicianNote" class="wide"><dt>기사 소견</dt><dd class="pre">{{ repair.technicianNote }}</dd></div>
     </dl>
   </section>
 </template>
@@ -68,5 +69,8 @@ h2 {
 }
 .wide {
   grid-column: 1 / -1;
+}
+.pre {
+  white-space: pre-wrap;
 }
 </style>

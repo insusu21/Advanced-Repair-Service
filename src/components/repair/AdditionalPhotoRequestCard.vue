@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* AI 추가 사진 요청 카드 — 부위·이유·촬영 방법·요청 횟수 + 사진 추가 */
+/* AI 추가 사진 요청 카드 — 부위·이유·촬영 방법·요청 횟수 + 추가 사진·추가 설명 (둘 중 하나 이상) */
 import { computed, ref } from 'vue'
 import { Camera, Send, TriangleAlert } from 'lucide-vue-next'
 import ImageUploader from './ImageUploader.vue'
@@ -9,8 +9,10 @@ import type { UploadItem } from '@/types/upload'
 import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ request: PhotoRequest; busy?: boolean; readonly?: boolean }>()
-const emit = defineEmits<{ submit: [UploadItem[]] }>()
+const emit = defineEmits<{ submit: [{ photos: UploadItem[]; note: string }] }>()
 const photos = ref<UploadItem[]>([])
+const note = ref('')
+const canSubmit = computed(() => photos.value.length > 0 || note.value.trim().length > 0)
 const remaining = computed(() => props.request.maxRequests - props.request.requestNo)
 </script>
 
@@ -44,10 +46,15 @@ const remaining = computed(() => props.request.maxRequests - props.request.reque
       </div>
 
       <template v-if="!readonly">
-        <ImageUploader v-model="photos" :label="`${request.target} 사진`" required :max="3" example-src="/mock/motor-joint.svg" />
+        <ImageUploader v-model="photos" :label="`${request.target} 사진`" :max="3" example-src="/mock/motor-joint.svg" />
+        <div class="field">
+          <label :for="`note-${request.id}`">추가 설명 <span class="faint">(선택)</span></label>
+          <textarea :id="`note-${request.id}`" v-model="note" class="textarea" maxlength="1000" placeholder="사진으로 보이지 않는 점이나 직접 확인한 상태를 적어 주세요. 예) 연결부를 손으로 눌러 보니 유격이 있음" />
+          <p class="help">사진이나 설명 중 하나는 있어야 제출할 수 있습니다.</p>
+        </div>
         <div class="row" style="justify-content: flex-end">
-          <button class="btn btn-primary btn-lg" type="button" :disabled="!photos.length || busy" @click="emit('submit', photos)">
-            <Send :size="20" /> {{ busy ? '등록 중…' : `사진 ${photos.length}장 추가하고 분석 계속` }}
+          <button class="btn btn-primary btn-lg" type="button" :disabled="!canSubmit || busy" @click="emit('submit', { photos, note: note.trim() })">
+            <Send :size="20" /> {{ busy ? '제출 중…' : '추가 자료 제출하고 분석 계속' }}
           </button>
         </div>
       </template>

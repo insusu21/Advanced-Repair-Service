@@ -8,7 +8,7 @@ import { computed, ref } from 'vue'
 import { repairApi, toErrorMessage } from '@/api'
 import { connectRepairEvents, type SseConnection, type SseState } from '@/services/sse'
 import type { Diagnosis, PhotoRequest, Repair, RepairEvent } from '@/types'
-import type { ApprovalRequest, ReanalysisRequest, SaveReportDraftRequest, UploadImageRequest } from '@/types/api'
+import type { AdditionalInfoRequest, ApprovalRequest, ReanalysisRequest, SaveReportDraftRequest, UploadImageRequest } from '@/types/api'
 
 export const useRepairDetailStore = defineStore('repairDetail', () => {
   const repair = ref<Repair | null>(null)
@@ -116,9 +116,9 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
       repair.value = await repairApi.reanalysis(repair.value!.id, req)
     })
 
-  const addPhotos = (reqs: UploadImageRequest[]) =>
+  const addPhotos = (req: AdditionalInfoRequest) =>
     run(async () => {
-      repair.value = await repairApi.uploadAdditional(repair.value!.id, reqs)
+      repair.value = await repairApi.uploadAdditional(repair.value!.id, req)
       photoRequests.value = await repairApi.photoRequests(repair.value.id)
     })
 

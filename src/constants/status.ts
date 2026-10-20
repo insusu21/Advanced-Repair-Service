@@ -12,7 +12,7 @@ import {
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AiAcceptance, AnalysisStage, FaultArea, RepairOutcome, RepairStatus, ReportStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
+import type { AiAcceptance, AnalysisStage, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -107,6 +107,17 @@ export const DECISION_META: Record<DecisionState, { label: string; tone: Tone }>
   REJECTED: { label: '반려됨', tone: 'danger' },
   CHANGE_REQUESTED: { label: '수정 요청됨', tone: 'warning' },
   REANALYSIS_REQUESTED: { label: '재분석 요청됨', tone: 'info' },
+}
+
+/** 접수 사진 제한 (백엔드와 동일): 칸별 5장, 전체 10장 */
+export const PHOTO_LIMIT = { perKind: 5, total: 10 }
+
+export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
+  PCB: 'PCB',
+  MECHANICAL: '기계·찌그러짐',
+  ADDITIONAL: '추가',
+  BEFORE: '수리 전',
+  AFTER: '수리 후',
 }
 
 /* ---------------- 수리 리포트 ---------------- */

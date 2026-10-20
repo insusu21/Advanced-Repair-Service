@@ -14,6 +14,8 @@ export interface LoginResponse {
 export interface CreateRepairRequest {
   product: ProductInfo
   symptom: string
+  /** 기사 소견 (선택, 최대 1000자) */
+  technicianNote?: string
   errorCodes: string[]
   urgency: Urgency
 }
@@ -24,6 +26,13 @@ export interface UploadImageRequest {
   file: File
   /** Mock 모드에서만 사용: 압축된 dataURL */
   dataUrl?: string
+  photoRequestId?: string
+}
+
+/** POST /api/repairs/{id}/additional-images — 추가 자료 (사진 또는 설명 중 하나 이상) */
+export interface AdditionalInfoRequest {
+  photos: UploadImageRequest[]
+  note?: string
   photoRequestId?: string
 }
 

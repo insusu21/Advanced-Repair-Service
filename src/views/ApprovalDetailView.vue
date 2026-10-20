@@ -12,6 +12,7 @@ import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import { useRepairPage } from '@/composables/useRepairPage'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
+import { PHOTO_KIND_LABEL } from '@/constants/status'
 import type { ApprovalAction } from '@/types/approval'
 
 const { store, repair, diagnosis, loading, error, submitting, photoRequests, reload } = useRepairPage({ diagnosis: true })
@@ -71,7 +72,7 @@ async function onAction(key: string, comment: string) {
         <div class="card-body photos">
           <figure v-for="img in repair.images" :key="img.id">
             <img :src="img.url" :alt="img.kind" loading="lazy" />
-            <figcaption class="faint">{{ { PRODUCT: '제품 전체', MOTOR: '모터', PCB: 'PCB', ADDITIONAL: `추가${img.note ? ` · ${img.note}` : ''}`, BEFORE: '수리 전', AFTER: '수리 후' }[img.kind] }}</figcaption>
+            <figcaption class="faint">{{ PHOTO_KIND_LABEL[img.kind] }}{{ img.kind === 'ADDITIONAL' && img.note ? ` · ${img.note}` : '' }}</figcaption>
           </figure>
         </div>
         <div v-if="isManual && photoRequests.length" class="card-body">

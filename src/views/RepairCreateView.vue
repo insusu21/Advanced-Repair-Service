@@ -8,6 +8,7 @@ import ImageUploader from '@/components/repair/ImageUploader.vue'
 import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
 import { repairApi, toErrorMessage } from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { PHOTO_KIND_LABEL, PHOTO_LIMIT } from '@/constants/status'
 import type { PhotoKind, ProductInfo, Urgency } from '@/types'
 import type { UploadItem } from '@/types/upload'
 import { formatDate, repairId } from '@/utils/format'
@@ -24,9 +25,13 @@ const form = reactive({
   errorCodes: [] as string[],
   noErrorCode: false,
   urgency: 'MEDIUM' as Urgency,
+  technicianNote: '',
 })
-const photos = reactive<Record<'PRODUCT' | 'MOTOR' | 'PCB', UploadItem[]>>({ PRODUCT: [], MOTOR: [], PCB: [] })
+/** 접수 사진 2종: PCB · 기계·찌그러짐(모터·외관 변형 등). 칸별 5장, 전체 10장 */
+const PHOTO_KINDS = ['PCB', 'MECHANICAL'] as const
+const photos = reactive<Record<(typeof PHOTO_KINDS)[number], UploadItem[]>>({ PCB: [], MECHANICAL: [] })
 const touched = reactive({ s1: false, s2: false, s3: false })
+const totalPhotos = computed(() => photos.PCB.length + photos.MECHANICAL.length)
 
 /* ---------- 1단계: 시리얼 → 제품 자동 조회 ---------- */
 const lookup = reactive({ loading: false, error: null as string | null })
@@ -83,9 +88,11 @@ const errs = computed(() => ({
   product: !form.product ? '시리얼 번호로 제품 정보를 조회해 주세요.' : null,
   symptom: form.symptom.trim().length < 5 ? '고장 증상을 5자 이상 입력해 주세요.' : null,
   codes: !form.noErrorCode && !form.errorCodes.length ? '에러 코드를 추가하거나 "에러 코드 없음"을 선택해 주세요.' : null,
-  photos: (['PRODUCT', 'MOTOR', 'PCB'] as const).filter((k) => !photos[k].length),
+  photos: PHOTO_KINDS.filter((k) => !photos[k].length),
+  photoTotal: totalPhotos.value > PHOTO_LIMIT.total ? `사진은 전체 ${PHOTO_LIMIT.total}장까지 등록할 수 있습니다. (현재 ${totalPhotos.value}장)` : null,
+  note: form.technicianNote.length > 1000 ? '기사 소견은 1000자까지 입력할 수 있습니다.' : null,
 }))
-const stepValid = computed(() => [!errs.value.product, !errs.value.symptom && !errs.value.codes, !errs.value.photos.length])
+const stepValid = computed(() => [!errs.value.product, !errs.value.symptom && !errs.value.codes && !errs.value.note, !errs.value.photos.length && !errs.value.photoTotal])
 
 function next() {
   const k = (['s1', 's2', 's3'] as const)[step.value]
@@ -102,9 +109,7 @@ function prev() {
 }
 
 /* ---------- 제출: 접수 생성 → 사진 업로드 → 진단 요청 ---------- */
-const PHOTO_LABEL: Record<'PRODUCT' | 'MOTOR' | 'PCB', string> = { PRODUCT: '제품 전체 사진', MOTOR: '모터 사진', PCB: 'PCB 사진' }
 const submit = reactive({ running: false, phase: '' as '' | 'create' | 'upload' | 'request' | 'done', uploaded: 0, error: null as string | null, repairId: null as number | null })
-const totalPhotos = computed(() => photos.PRODUCT.length + photos.MOTOR.length + photos.PCB.length)
 
 async function doSubmit() {
   touched.s3 = true
@@ -114,13 +119,13 @@ async function doSubmit() {
   try {
     if (!submit.repairId) {
       submit.phase = 'create'
-      const r = await repairApi.create({ product: form.product, symptom: form.symptom.trim(), errorCodes: form.errorCodes, urgency: form.urgency })
+      const r = await repairApi.create({ product: form.product, symptom: form.symptom.trim(), technicianNote: form.technicianNote.trim() || undefined, errorCodes: form.errorCodes, urgency: form.urgency })
       submit.repairId = r.id
     }
     submit.phase = 'upload'
     submit.uploaded = 0
     // 재시도 시에도 같은 접수 건에 업로드 (중복 접수 방지)
-    for (const kind of ['PRODUCT', 'MOTOR', 'PCB'] as const) {
+    for (const kind of PHOTO_KINDS) {
       for (const p of photos[kind]) {
         await repairApi.uploadImage(submit.repairId, { kind: kind as PhotoKind, file: p.file, dataUrl: p.dataUrl })
         submit.uploaded++
@@ -246,6 +251,14 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
       </div>
 
       <div class="field">
+        <label for="tech-note">기사 소견 <span class="faint">(선택)</span></label>
+        <p class="help">직접 보고 판단한 내용을 자유롭게 적어 주세요. AI 분석에 함께 사용됩니다.</p>
+        <textarea id="tech-note" v-model="form.technicianNote" class="textarea" :class="{ invalid: !!errs.note }" maxlength="1000" placeholder="예) 하우징 아래쪽이 눌린 흔적이 있고, 바퀴를 손으로 돌리면 걸리는 느낌이 있음" :aria-invalid="!!errs.note" />
+        <p class="faint count">{{ form.technicianNote.length }} / 1000</p>
+        <p v-if="errs.note" class="error-text"><CircleAlert :size="16" /> {{ errs.note }}</p>
+      </div>
+
+      <div class="field">
         <span class="label">긴급도</span>
         <div class="choice-group" role="radiogroup" aria-label="긴급도">
           <button v-for="u in [{ v: 'HIGH', l: '긴급 · 오늘 처리' }, { v: 'MEDIUM', l: '보통 · 2일 이내' }, { v: 'LOW', l: '낮음 · 일반 처리' }] as const" :key="u.v" type="button" class="choice" role="radio" :aria-checked="form.urgency === u.v" @click="form.urgency = u.v">
@@ -260,14 +273,15 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
       <div class="card card-pad stack">
         <h2 id="s3" class="section-title">3단계 · 사진 등록</h2>
         <p class="muted">밝은 곳에서 초점을 맞춰 찍어 주세요. 사진이 흐리면 AI 가 추가 사진을 요청할 수 있습니다.</p>
-        <div class="grid-3">
-          <ImageUploader v-model="photos.PRODUCT" label="제품 전체 사진" description="제품 윗면 전체가 보이게" required :invalid="touched.s3" example-src="/mock/product.svg" />
-          <ImageUploader v-model="photos.MOTOR" label="모터 사진" description="하우징과 하단 연결부가 보이게" required :invalid="touched.s3" example-src="/mock/motor.svg" />
-          <ImageUploader v-model="photos.PCB" label="PCB 사진" description="보드 전체가 정면으로 보이게" required :invalid="touched.s3" example-src="/mock/pcb.svg" />
+        <div class="grid-2">
+          <ImageUploader v-model="photos.PCB" label="PCB 사진" description="보드 전체가 정면으로 보이게" required :max="PHOTO_LIMIT.perKind" :invalid="touched.s3 && !photos.PCB.length" example-src="/mock/pcb.svg" />
+          <ImageUploader v-model="photos.MECHANICAL" label="기계·찌그러짐 사진" description="모터·하우징·외관 변형 부위가 보이게" required :max="PHOTO_LIMIT.perKind" :invalid="touched.s3 && !photos.MECHANICAL.length" example-src="/mock/motor.svg" />
         </div>
         <p v-if="touched.s3 && errs.photos.length" class="error-text" role="alert">
-          <CircleAlert :size="16" /> {{ errs.photos.map((k) => PHOTO_LABEL[k]).join(', ') }}을(를) 등록해 주세요.
+          <CircleAlert :size="16" /> {{ errs.photos.map((k) => `${PHOTO_KIND_LABEL[k]} 사진`).join(', ') }}을(를) 등록해 주세요.
         </p>
+        <p v-if="errs.photoTotal" class="error-text" role="alert"><CircleAlert :size="16" /> {{ errs.photoTotal }}</p>
+        <p class="faint">칸별 최대 {{ PHOTO_LIMIT.perKind }}장, 전체 최대 {{ PHOTO_LIMIT.total }}장</p>
       </div>
 
       <div class="card card-pad stack">
@@ -282,7 +296,9 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <dt>긴급도</dt>
           <dd>{{ { HIGH: '긴급', MEDIUM: '보통', LOW: '낮음' }[form.urgency] }}</dd>
           <dt>사진</dt>
-          <dd>{{ totalPhotos }}장 (제품 {{ photos.PRODUCT.length }} · 모터 {{ photos.MOTOR.length }} · PCB {{ photos.PCB.length }})</dd>
+          <dd>{{ totalPhotos }}장 (PCB {{ photos.PCB.length }} · 기계·찌그러짐 {{ photos.MECHANICAL.length }})</dd>
+          <dt>기사 소견</dt>
+          <dd class="pre">{{ form.technicianNote.trim() || '없음' }} <button type="button" class="btn btn-sm btn-ghost" @click="step = 1"><Pencil :size="14" /> 수정</button></dd>
         </dl>
         <p class="callout tone-ai"><ScanLine :size="20" /> 진단 요청 후 오케스트레이터 AI 가 필요한 분석(PCB·모터·SW)을 선택합니다. 결과는 <b>AI 초안</b>으로 표시되며 기사님의 확인이 필요합니다.</p>
 
@@ -432,5 +448,12 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
   padding: 12px 16px;
   box-shadow: var(--shadow-lg);
   z-index: 10;
+}
+.pre {
+  white-space: pre-wrap;
+}
+.count {
+  text-align: right;
+  font-size: var(--fs-xs);
 }
 </style>

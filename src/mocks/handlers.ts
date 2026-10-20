@@ -21,6 +21,7 @@ import type {
   User,
 } from '@/types'
 import type {
+  AdditionalInfoRequest,
   ApprovalRequest,
   CreateOrderRequest,
   CreateRepairRequest,
@@ -151,6 +152,7 @@ export function createRepair(req: CreateRepairRequest): Repair {
     receiptNo: `SR-2026-${String(10000 + id * 7).padStart(5, '0')}`,
     product: { ...req.product },
     symptom: req.symptom,
+    technicianNote: req.technicianNote?.trim() || undefined,
     errorCodes: [...req.errorCodes],
     branch: u.branch,
     technician: u.name,
@@ -185,7 +187,7 @@ export function submitRepair(id: number): Repair {
   const u = requireRole('TECHNICIAN')
   const r = repairOr404(id)
   const kinds = new Set(r.images.map((i) => i.kind))
-  if (!kinds.has('PRODUCT') || !kinds.has('MOTOR') || !kinds.has('PCB')) throw new ApiError(422, '제품 전체·모터·PCB 사진이 모두 필요합니다.')
+  if (!kinds.has('PCB') || !kinds.has('MECHANICAL')) throw new ApiError(422, 'PCB 사진과 기계·찌그러짐 사진이 모두 필요합니다.')
   r.status = 'RECEIVED'
   log(r, { target: 'SYSTEM', action: 'SUBMITTED', actor: u.name, actorRole: 'TECHNICIAN', comment: `사진 ${r.images.length}장 등록 · AI 진단 요청` })
   persist()
@@ -198,14 +200,17 @@ export function getPhotoRequests(id: number): PhotoRequest[] {
   return db.photoRequests[id] ?? []
 }
 
-export function uploadAdditionalImages(id: number, reqs: UploadImageRequest[]): Repair {
+export function uploadAdditionalImages(id: number, req: AdditionalInfoRequest): Repair {
   const u = requireRole('TECHNICIAN')
   const r = repairOr404(id)
   if (r.status !== 'ADDITIONAL_INFO_NEEDED') throw new ApiError(409, '추가 사진을 요청받은 상태가 아닙니다.')
+  const note = req.note?.trim()
+  if (!req.photos.length && !note) throw new ApiError(422, '추가 사진이나 설명 중 하나는 입력해 주세요.')
   const pending = (db.photoRequests[id] ?? []).find((p) => !p.resolved)
-  reqs.forEach((q) => r.images.push({ ...toImage({ ...q, kind: 'ADDITIONAL' }), note: pending?.target }))
+  req.photos.forEach((q) => r.images.push({ ...toImage({ ...q, kind: 'ADDITIONAL' }), note: pending?.target }))
   if (pending) pending.resolved = true
-  log(r, { target: 'PHOTO', action: 'PHOTO_ADDED', actor: u.name, actorRole: 'TECHNICIAN', comment: `추가 사진 ${reqs.length}장 등록 (${pending?.target ?? '추가'})` })
+  const what = [req.photos.length ? `추가 사진 ${req.photos.length}장` : '', note ? '추가 설명' : ''].filter(Boolean).join(' · ')
+  log(r, { target: 'PHOTO', action: 'PHOTO_ADDED', actor: u.name, actorRole: 'TECHNICIAN', comment: `${what} 제출 (${pending?.target ?? '추가'})${note ? `\n설명: ${note}` : ''}` })
   // 데모: 추가 사진 등록 후 정상 진행
   r.mockScenario = 'NORMAL'
   restartAnalysis(r, 'MOTOR_ANALYSIS')
@@ -391,7 +396,8 @@ export function getPartInventory(partId: string): Part {
   return p
 }
 
-/** AI 발주안이 없으면 진단의 필요 부품으로부터 생성 (AI_DRAFT — 아직 요청 아님) */
+/** AI 발주안이 없으면 진단의 필요 부품으로부터 생성 (AI_DRAFT — 아직 요청 아님)
+ *  전체 창고 재고가 필요 수량 이상이면 재고로 수리하므로 발주안을 만들지 않는다 */
 export function listRepairOrders(id: number): PurchaseOrder[] {
   const r = repairOr404(id)
   const d = latestDiagnosis(id)
@@ -399,6 +405,8 @@ export function listRepairOrders(id: number): PurchaseOrder[] {
     for (const rec of d.parts) {
       if (db.orders.some((o) => o.repairId === id && o.partId === rec.partId)) continue
       const part = db.parts.find((p) => p.id === rec.partId)
+      const total = part?.stocks.reduce((a, s) => a + s.quantity, 0) ?? 0
+      if (total >= rec.quantity) continue
       const best = part?.stocks.slice().sort((a, b) => b.quantity - a.quantity)[0]
       db.orders.push({
         id: uid('PO'),
@@ -409,7 +417,7 @@ export function listRepairOrders(id: number): PurchaseOrder[] {
         partName: rec.partName,
         quantity: rec.quantity,
         fromWarehouse: best?.warehouse ?? '-',
-        aiReason: `${rec.reason}. ${best && best.quantity > 0 ? `${best.warehouse} 재고 ${best.quantity}개로 출고 가능` : `재고 없음 · ${part?.factory} 생산 요청 필요 (예상 ${part?.leadTimeDays}일)`}`,
+        aiReason: `${rec.reason}. 전체 창고 재고 ${total}개로 필요 수량 ${rec.quantity}개에 부족 · ${part?.factory} 생산 요청 필요 (예상 ${part?.leadTimeDays}일)`,
         aiConfidence: d.confidence,
         sourceIds: d.candidates[0]?.sourceIds ?? [],
         status: 'AI_DRAFT',

@@ -2,6 +2,7 @@ import { http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
 import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
+  AdditionalInfoRequest,
   ApprovalRequest,
   ConfirmReportRequest,
   CreateRepairRequest,
@@ -67,12 +68,13 @@ export const repairApi = {
     return (await http.get<PhotoRequest[]>(`/repairs/${id}/photo-requests`)).data
   },
 
-  /** POST /api/repairs/{id}/additional-images */
-  async uploadAdditional(id: number, reqs: UploadImageRequest[]): Promise<Repair> {
-    if (USE_MOCK) return mockDelay(() => mock.uploadAdditionalImages(id, reqs), 600)
+  /** POST /api/repairs/{id}/additional-images — 추가 사진(0장 이상) + 추가 설명 (multipart: files, note, photoRequestId) */
+  async uploadAdditional(id: number, req: AdditionalInfoRequest): Promise<Repair> {
+    if (USE_MOCK) return mockDelay(() => mock.uploadAdditionalImages(id, req), 600)
     const f = new FormData()
-    reqs.forEach((r) => f.append('files', r.file))
-    if (reqs[0]?.photoRequestId) f.append('photoRequestId', reqs[0].photoRequestId)
+    req.photos.forEach((r) => f.append('files', r.file))
+    if (req.note?.trim()) f.append('note', req.note.trim())
+    if (req.photoRequestId) f.append('photoRequestId', req.photoRequestId)
     return (await http.post<Repair>(`/repairs/${id}/additional-images`, f)).data
   },
 

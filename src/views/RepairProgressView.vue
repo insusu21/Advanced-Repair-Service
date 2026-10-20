@@ -14,7 +14,7 @@ import { useRepairPage } from '@/composables/useRepairPage'
 import { useReasonDialog } from '@/composables/useReasonDialog'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
-import { STAGE_META } from '@/constants/status'
+import { PHOTO_KIND_LABEL, STAGE_META } from '@/constants/status'
 import { toErrorMessage } from '@/api'
 import { formatDateTime } from '@/utils/format'
 import type { UploadItem } from '@/types/upload'
@@ -37,10 +37,14 @@ const sse = computed(() => ({
   error: { label: '연결 실패 · 새로고침 필요', tone: 'danger', icon: WifiOff },
 })[sseState.value])
 
-async function addPhotos(items: UploadItem[]) {
+async function addPhotos(p: { photos: UploadItem[]; note: string }) {
   try {
-    await store.addPhotos(items.map((i) => ({ kind: 'ADDITIONAL', file: i.file, dataUrl: i.dataUrl, photoRequestId: activePhotoRequest.value?.id })))
-    toast.success('추가 사진을 등록했습니다. 분석을 이어서 진행합니다.')
+    await store.addPhotos({
+      photos: p.photos.map((i) => ({ kind: 'ADDITIONAL', file: i.file, dataUrl: i.dataUrl, photoRequestId: activePhotoRequest.value?.id })),
+      note: p.note,
+      photoRequestId: activePhotoRequest.value?.id,
+    })
+    toast.success('추가 자료를 제출했습니다. 분석을 이어서 진행합니다.')
   } catch (e) {
     toast.error(toErrorMessage(e))
   }
@@ -136,7 +140,7 @@ async function confirmDialog() {
             <div class="card-body thumbs">
               <figure v-for="img in repair.images" :key="img.id">
                 <img :src="img.url" :alt="img.kind" loading="lazy" />
-                <figcaption class="faint">{{ { PRODUCT: '제품 전체', MOTOR: '모터', PCB: 'PCB', ADDITIONAL: '추가', BEFORE: '수리 전', AFTER: '수리 후' }[img.kind] }}</figcaption>
+                <figcaption class="faint">{{ PHOTO_KIND_LABEL[img.kind] }}</figcaption>
               </figure>
             </div>
           </section>

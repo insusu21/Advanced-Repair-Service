@@ -4,14 +4,15 @@
  *  - 기사(TECHNICIAN): AI 발주안(AI_DRAFT)을 검토·수량 조정 후 "발주 요청 등록" (사람 확인)
  *  - 본사 품질 담당자(QUALITY_MANAGER): 요청(REQUESTED)을 승인·반려
  * AI 는 제안만 하며, 어떤 경우에도 자동으로 발주되지 않는다.
+ * 기사 화면에서는 전체 창고 재고로 분기: 부족하면 생산 공장·연락처·예상 입고일을 함께 보여 준다.
  * ========================================================================= */
 import { computed, ref, watch } from 'vue'
-import { CircleCheck, CircleX, Send, Package, CircleAlert } from 'lucide-vue-next'
+import { CircleCheck, CircleX, Send, Package, CircleAlert, Factory, Warehouse } from 'lucide-vue-next'
 import AiBadge from '@/components/common/AiBadge.vue'
 import ConfidenceBar from '@/components/common/ConfidenceBar.vue'
 import { ORDER_STATUS_META, ROLE_LABEL } from '@/constants/status'
 import type { Part, PurchaseOrder, Role } from '@/types'
-import { formatDateTime, formatNumber, repairId } from '@/utils/format'
+import { formatDate, formatDateTime, formatNumber, repairId } from '@/utils/format'
 
 const props = defineProps<{ order: PurchaseOrder; part?: Part; role: Role | null; busy?: boolean }>()
 const emit = defineEmits<{
@@ -33,6 +34,10 @@ const stockAt = computed(() => props.part?.stocks.find((s) => s.warehouse === wh
 const shortage = computed(() => qty.value > stockAt.value)
 const meta = computed(() => ORDER_STATUS_META[props.order.status])
 const canRequest = computed(() => props.role === 'TECHNICIAN' && (props.order.status === 'AI_DRAFT' || props.order.status === 'REJECTED'))
+/** 전체 창고 재고 · 발주 필요 여부 · 예상 입고일 (오늘 + 생산 리드타임) */
+const totalStock = computed(() => props.part?.stocks.reduce((a, s) => a + s.quantity, 0) ?? 0)
+const needOrder = computed(() => totalStock.value < qty.value)
+const eta = computed(() => (props.part ? formatDate(new Date(Date.now() + props.part.leadTimeDays * 86_400_000).toISOString()) : '-'))
 const canDecide = computed(() => props.role === 'QUALITY_MANAGER' && props.order.status === 'REQUESTED')
 
 function submitRequest() {
@@ -76,6 +81,25 @@ function decide(action: 'APPROVE' | 'REJECT') {
       <!-- 사람 입력 / 결정 -->
       <div class="stack">
         <template v-if="canRequest">
+          <div v-if="part && needOrder" class="callout tone-warning stock-state">
+            <Factory :size="20" />
+            <div>
+              <strong>재고 부족 · 발주 필요</strong>
+              전체 창고 재고 {{ totalStock }}개 / 필요 {{ qty }}개
+              <dl class="kv mini">
+                <dt>생산 공장</dt>
+                <dd>{{ part.factory }}</dd>
+                <dt>담당 · 연락처</dt>
+                <dd>{{ part.factoryContact.manager }} · <a :href="`tel:${part.factoryContact.phone}`">{{ part.factoryContact.phone }}</a> · <a :href="`mailto:${part.factoryContact.email}`">{{ part.factoryContact.email }}</a></dd>
+                <dt>예상 입고일</dt>
+                <dd>{{ eta }} (생산 약 {{ part.leadTimeDays }}일)</dd>
+              </dl>
+            </div>
+          </div>
+          <div v-else-if="part" class="callout tone-success stock-state">
+            <Warehouse :size="20" />
+            <div><strong>창고 재고가 있습니다</strong> (전체 {{ totalStock }}개) 재고로 수리할 수 없을 때만 발주를 요청하세요.</div>
+          </div>
           <div class="grid-2">
             <div class="field">
               <label :for="`qty-${order.id}`" class="req">발주 수량</label>
@@ -198,5 +222,12 @@ function decide(action: 'APPROVE' | 'REJECT') {
   .grid {
     grid-template-columns: 1fr;
   }
+}
+.stock-state {
+  align-items: flex-start;
+}
+.stock-state .mini {
+  margin-top: 6px;
+  font-size: var(--fs-sm);
 }
 </style>

@@ -153,8 +153,7 @@ const SOURCES: DataSource[] = [
 function baseImages(prefix: string, minutesAgo: number): RepairImage[] {
   const at = isoAgo(minutesAgo)
   return [
-    { id: `${prefix}-img-p`, kind: 'PRODUCT', url: '/mock/product.svg', name: 'product.jpg', uploadedAt: at },
-    { id: `${prefix}-img-m`, kind: 'MOTOR', url: '/mock/motor.svg', name: 'motor.jpg', uploadedAt: at },
+    { id: `${prefix}-img-m`, kind: 'MECHANICAL', url: '/mock/motor.svg', name: 'mechanical.jpg', uploadedAt: at },
     { id: `${prefix}-img-c`, kind: 'PCB', url: '/mock/pcb.svg', name: 'pcb.jpg', uploadedAt: at },
   ]
 }
@@ -323,7 +322,7 @@ const TEMPLATES = { MOTOR_HOUSING: motorHousingDiagnosis, WHEEL_SENSOR: wheelSen
 export type DiagnosisTemplateKey = keyof typeof TEMPLATES
 
 export function buildDiagnosis(repair: Repair, key: DiagnosisTemplateKey, version = 1, minutesAgo = 30): Diagnosis {
-  const prefix = repair.images.find((i) => i.kind === 'MOTOR')?.id.replace(/-img-m$/, '') ?? `r${repair.id}`
+  const prefix = repair.images.find((i) => i.kind === 'MECHANICAL')?.id.replace(/-img-m$/, '') ?? `r${repair.id}`
   const t = TEMPLATES[key](prefix)
   // 실제 업로드 이미지 ID 와 연결 (신규 접수 건 대응)
   const imgByKind = (k: string) => repair.images.find((i) => i.kind === k)?.id
@@ -331,7 +330,7 @@ export function buildDiagnosis(repair: Repair, key: DiagnosisTemplateKey, versio
     ...a,
     annotations: a.annotations.map((an) => ({
       ...an,
-      imageId: an.imageId.endsWith('-img-m') ? (imgByKind('MOTOR') ?? an.imageId) : an.imageId.endsWith('-img-c') ? (imgByKind('PCB') ?? an.imageId) : an.imageId,
+      imageId: an.imageId.endsWith('-img-m') ? (imgByKind('MECHANICAL') ?? an.imageId) : an.imageId.endsWith('-img-c') ? (imgByKind('PCB') ?? an.imageId) : an.imageId,
     })),
   }))
   return {
@@ -369,6 +368,8 @@ const SEEDS: Seed[] = [
   { id: 104, serial: 'RC2025009921', symptom: '바퀴 회전이 간헐적으로 멈춤', errorCodes: ['E210'], status: 'TECHNICIAN_REVIEW', tech: KIM, minutesAgo: 60 * 26, urgency: 'MEDIUM', diag: 'WHEEL_SENSOR' },
   { id: 105, serial: 'RC2025008812', symptom: '청소 시작 3분 후 소음과 함께 정지', errorCodes: ['E103'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 50, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
   { id: 106, serial: 'RC2025007710', symptom: '전원 투입 직후 재부팅 반복', errorCodes: ['E501'], status: 'CLOSED', tech: PARK, minutesAgo: 60 * 30, urgency: 'HIGH', diag: 'PCB' },
+  // 재고 없는 부품(메인 PCB, 재고 0) → 발주 필요 사례. #101(모터 어셈블리, 수원 7개)은 재고로 수리 가능 사례
+  { id: 114, serial: 'RC2026000722', symptom: '전원 투입 후 바로 꺼지고 충전 표시등이 깜빡임', errorCodes: ['E501'], status: 'TECHNICIAN_REVIEW', tech: KIM, minutesAgo: 60 * 3, urgency: 'MEDIUM', diag: 'PCB' },
   { id: 113, serial: 'RC2026000610', symptom: '물걸레 모듈 장착 후 주행 멈춤', errorCodes: ['E103'], status: 'DIAGNOSIS_COMPLETED', tech: PARK, minutesAgo: 70, urgency: 'MEDIUM', diag: 'WHEEL_SENSOR' },
   { id: 107, serial: 'RC2025006601', symptom: '소음 후 주행 불가', errorCodes: ['E103'], status: 'CLOSED', tech: KIM, minutesAgo: 60 * 24 * 4, urgency: 'HIGH', diag: 'MOTOR_HOUSING' },
   { id: 112, serial: 'RC2025002205', symptom: '좌측 바퀴 헛돎', errorCodes: ['E210'], status: 'CLOSED', tech: PARK, minutesAgo: 60 * 24 * 6, urgency: 'LOW', diag: 'WHEEL_SENSOR' },
@@ -386,7 +387,7 @@ const REVISED_SEEDS = [106]
 
 function history(seed: Seed): ApprovalRecord[] {
   const r: ApprovalRecord[] = [
-    { id: `h${seed.id}-1`, target: 'SYSTEM', action: 'CREATED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo), comment: '수리 접수 및 사진 3장 등록' },
+    { id: `h${seed.id}-1`, target: 'SYSTEM', action: 'CREATED', actor: seed.tech.name, actorRole: 'TECHNICIAN', at: isoAgo(seed.minutesAgo), comment: '수리 접수 및 사진 2장 등록 (PCB · 기계)' },
   ]
   if (seed.diag) {
     r.push({ id: `h${seed.id}-2`, target: 'DIAGNOSIS', action: 'AI_GENERATED', actor: 'AI Orchestrator', actorRole: 'AI', at: isoAgo(seed.minutesAgo - 3), comment: 'AI 진단 초안 v1 생성' })

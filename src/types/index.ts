@@ -27,7 +27,8 @@ export type RepairStatus =
   | 'MANUAL_REVIEW'
   | 'CLOSED'
 
-export type PhotoKind = 'PRODUCT' | 'MOTOR' | 'PCB' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
+/** 접수 사진은 PCB · MECHANICAL(모터·외관 변형 등) 2종 */
+export type PhotoKind = 'PCB' | 'MECHANICAL' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
 
 export interface RepairImage {
   id: string
@@ -53,6 +54,8 @@ export interface Repair {
   receiptNo: string
   product: ProductInfo
   symptom: string
+  /** 기사 소견 (접수 시 선택 입력, AI 분석에 함께 사용) */
+  technicianNote?: string
   errorCodes: string[]
   branch: string
   technician: string
