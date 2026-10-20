@@ -27,10 +27,10 @@ const form = reactive({
   technicianNote: '',
 })
 /** 접수 사진 2종: PCB · 기계·찌그러짐(모터·외관 변형 등). 칸별 5장, 전체 10장 */
-const PHOTO_KINDS = ['PCB', 'MECHANICAL'] as const
-const photos = reactive<Record<(typeof PHOTO_KINDS)[number], UploadItem[]>>({ PCB: [], MECHANICAL: [] })
+const PHOTO_KINDS = ['PCB', 'MOTOR'] as const
+const photos = reactive<Record<(typeof PHOTO_KINDS)[number], UploadItem[]>>({ PCB: [], MOTOR: [] })
 const touched = reactive({ s1: false, s2: false, s3: false })
-const totalPhotos = computed(() => photos.PCB.length + photos.MECHANICAL.length)
+const totalPhotos = computed(() => photos.PCB.length + photos.MOTOR.length)
 
 /* ---------- 1단계: 시리얼 → 제품 자동 조회 ---------- */
 const lookup = reactive({ loading: false, error: null as string | null })
@@ -283,7 +283,7 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
         <p class="muted">밝은 곳에서 초점을 맞춰 찍어 주세요. 사진이 흐리면 AI 가 추가 사진을 요청할 수 있습니다.</p>
         <div class="grid-2">
           <ImageUploader v-model="photos.PCB" label="PCB 사진" description="보드 전체가 정면으로 보이게" required :max="PHOTO_LIMIT.perKind" :invalid="touched.s3 && !photos.PCB.length" example-src="/mock/pcb.svg" />
-          <ImageUploader v-model="photos.MECHANICAL" label="기계·찌그러짐 사진" description="모터·하우징·외관 변형 부위가 보이게" required :max="PHOTO_LIMIT.perKind" :invalid="touched.s3 && !photos.MECHANICAL.length" example-src="/mock/motor.svg" />
+          <ImageUploader v-model="photos.MOTOR" label="기계·찌그러짐 사진" description="모터·하우징·외관 변형 부위가 보이게" required :max="PHOTO_LIMIT.perKind" :invalid="touched.s3 && !photos.MOTOR.length" example-src="/mock/motor.svg" />
         </div>
         <p v-if="touched.s3 && errs.photos.length" class="error-text" role="alert">
           <CircleAlert :size="16" /> {{ errs.photos.map((k) => `${PHOTO_KIND_LABEL[k]} 사진`).join(', ') }}을(를) 등록해 주세요.
@@ -304,7 +304,7 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <dt>긴급도</dt>
           <dd>{{ { HIGH: '긴급', MEDIUM: '보통', LOW: '낮음' }[form.urgency] }}</dd>
           <dt>사진</dt>
-          <dd>{{ totalPhotos }}장 (PCB {{ photos.PCB.length }} · 기계·찌그러짐 {{ photos.MECHANICAL.length }})</dd>
+          <dd>{{ totalPhotos }}장 (PCB {{ photos.PCB.length }} · 기계·찌그러짐 {{ photos.MOTOR.length }})</dd>
           <dt>기사 소견</dt>
           <dd class="pre">{{ form.technicianNote.trim() || '없음' }} <button type="button" class="btn btn-sm btn-ghost" @click="step = 1"><Pencil :size="14" /> 수정</button></dd>
         </dl>

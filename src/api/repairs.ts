@@ -150,7 +150,9 @@ export const repairApi = {
     const f = new FormData()
     f.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
     photos.forEach((p) => f.append('files', p.file))
-    const res = (await http.post<BeAccepted>('/repairs', f)).data
+    // 사진별 종류(PCB/MOTOR)를 같은 순서로 보낸다 → 백엔드 attachment.target 에 저장, 에이전트가 사진을 나눠 분석
+    const targets = photos.map((p) => p.kind)
+    const res = (await http.post<BeAccepted>('/repairs', f, { params: { targets }, paramsSerializer: { indexes: null } })).data
     return { repairId: Number(res.repairId) }
   },
 
@@ -193,13 +195,16 @@ export const repairApi = {
   async uploadAdditional(id: number, req: AdditionalInfoRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.uploadAdditionalImages(id, req), 600)
     if (!req.photos.length) throw new ApiError(400, '추가 사진을 1장 이상 올려 주세요. (설명만 제출하는 기능은 아직 지원되지 않습니다)', 'INVALID_INPUT')
-    const requestId = req.photoRequestId ?? (await fetchDetail(id, true)).photoRequests.find((p) => p.status === 'OPEN')?.id
+    const open = (await fetchDetail(id, true)).photoRequests.filter((p) => p.status === 'OPEN')
+    const request = open.find((p) => p.id === req.photoRequestId) ?? open[0]
+    const requestId = req.photoRequestId ?? request?.id
     if (!requestId) throw new ApiError(409, '열려 있는 추가 사진 요청이 없습니다. 화면을 새로고침해 주세요.', 'NOT_FOUND')
+    const target = request?.target ?? 'GENERAL' // AI가 요청한 부위(PCB/MOTOR/GENERAL)로 저장
     const attachmentIds: string[] = []
     for (const p of req.photos) {
       const f = new FormData()
       f.append('file', p.file)
-      attachmentIds.push((await http.post<BeUploaded>(`/repairs/${id}/attachments`, f, { params: { requestId } })).data.attachmentId)
+      attachmentIds.push((await http.post<BeUploaded>(`/repairs/${id}/attachments`, f, { params: { requestId, target } })).data.attachmentId)
     }
     await http.post(`/repairs/${id}/diagnosis/resume`, { requestId, submissionKey: crypto.randomUUID(), attachmentIds, note: req.note?.trim() || undefined })
     return realGet(id, true)

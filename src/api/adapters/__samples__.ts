@@ -39,7 +39,7 @@ export const SAMPLE_REPAIR: BeRepair = {
   symptom: '바퀴가 움직이지 않음', // API.md: POST /api/repairs data.symptoms
   error_codes: ['E01', 'E02'],
   firmware_version: '1.2.3',
-  user_input: { technicianNote: '기사 원문', photoKinds: ['PCB', 'MECHANICAL'], urgency: 'HIGH' },
+  user_input: { technicianNote: '기사 원문', photoKinds: ['PCB', 'MOTOR'], urgency: 'HIGH' },
   product_snapshot: { serial_number: 'ROBOT-SEOUL-001', model_code: 'RC-A100', model_name: '로봇청소기 A100' },
   status: 'DIAGNOSING',
   procurement_status: 'NOT_STARTED',
@@ -218,7 +218,7 @@ export function runAllSamples(): boolean {
   ok('접수 id 숫자 변환', r.id === 101 && r.urgency === 'HIGH' && r.technicianNote === '기사 원문')
   const d = sampleRepairDetail()
   ok('상세 상태 WAITING_INPUT → ADDITIONAL_INFO_NEEDED', d.status === 'ADDITIONAL_INFO_NEEDED')
-  ok('사진 종류 photoKinds 순서 + 추가 사진', d.images.map((i) => i.kind).join() === 'PCB,MECHANICAL,ADDITIONAL')
+  ok('사진 종류 photoKinds 순서 + 추가 사진', d.images.map((i) => i.kind).join() === 'PCB,MOTOR,ADDITIONAL')
   ok('3단계: 분석 진행 추가 사진 대기', d.stages.map((s) => s.stage).join() === 'QUEUED,ANALYSIS,SYNTHESIS' && d.stages[1].state === 'WAITING_INPUT')
   const sg = sampleStages()
   ok('작업 QUEUED → 접수·대기열 진행 중', sg.queued.stages[0].state === 'RUNNING' && sg.queued.stages[1].state === 'PENDING')

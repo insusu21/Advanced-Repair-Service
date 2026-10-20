@@ -89,6 +89,11 @@ export interface BeCandidate {
   /** 0~1 또는 0~100 (어댑터에서 % 로 정규화) */
   confidence: number
   explanation: string
+  /** 에이전트 v2 추가 필드 (없을 수 있음) */
+  causeCode?: string
+  scoreKind?: 'DETECTION' | 'CASE_BASED'
+  evidenceNotes?: string[]
+  sourceIds?: string[]
 }
 export interface BeEvidence {
   type: string
@@ -107,6 +112,34 @@ export interface BeDiagnosisResult {
   candidates: BeCandidate[]
   recommendedParts: BeRecommendedPart[]
   evidence: BeEvidence[]
+  /** 에이전트 v2 추가 필드 (없을 수 있음) */
+  topCause?: string
+  urgency?: 'HIGH' | 'MEDIUM' | 'LOW'
+  agents?: BeAgent[]
+  sources?: { id: string; type: string; title: string; ref: string }[]
+  similarCases?: BeSimilarCase[]
+  inspectionSteps?: string[]
+  repairSteps?: string[]
+}
+/** 사진 분석 에이전트 결과. annotations 좌표는 이미지 대비 0~1 */
+export interface BeAgent {
+  agent: string
+  tool: string
+  verdict: string
+  summary: string
+  findings: string[]
+  confidence: number
+  attachmentIds: BeId[]
+  modelVersion?: string
+  annotations: { attachmentId: BeId; label: string; score: number; x: number; y: number; width: number; height: number }[]
+}
+export interface BeSimilarCase {
+  caseId: string
+  origin: string
+  sourceUri?: string
+  summaryKo: string
+  similarity: number
+  originalText?: string
 }
 
 /** GET /api/repairs/{id}/diagnosis — Task (+ 정규화 candidates/evidence/recommendedParts) */

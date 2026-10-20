@@ -117,7 +117,7 @@ export const PHOTO_LIMIT = { perKind: 5, total: 10 }
 
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   PCB: 'PCB',
-  MECHANICAL: '기계·찌그러짐',
+  MOTOR: '기계·찌그러짐',
   ADDITIONAL: '추가',
   BEFORE: '수리 전',
   AFTER: '수리 후',

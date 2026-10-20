@@ -34,8 +34,8 @@ export type RepairStatus =
   /** 실서버 전용: 접수 취소 */
   | 'CANCELLED'
 
-/** 접수 사진은 PCB · MECHANICAL(모터·외관 변형 등) 2종 */
-export type PhotoKind = 'PCB' | 'MECHANICAL' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
+/** 접수 사진은 PCB · MOTOR(모터·외관 변형 등) 2종 */
+export type PhotoKind = 'PCB' | 'MOTOR' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
 
 export interface RepairImage {
   id: string

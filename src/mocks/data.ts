@@ -155,7 +155,7 @@ const SOURCES: DataSource[] = [
 function baseImages(prefix: string, minutesAgo: number): RepairImage[] {
   const at = isoAgo(minutesAgo)
   return [
-    { id: `${prefix}-img-m`, kind: 'MECHANICAL', url: '/mock/motor.svg', name: 'mechanical.jpg', uploadedAt: at },
+    { id: `${prefix}-img-m`, kind: 'MOTOR', url: '/mock/motor.svg', name: 'mechanical.jpg', uploadedAt: at },
     { id: `${prefix}-img-c`, kind: 'PCB', url: '/mock/pcb.svg', name: 'pcb.jpg', uploadedAt: at },
   ]
 }
@@ -332,7 +332,7 @@ const TEMPLATES = { MOTOR_HOUSING: motorHousingDiagnosis, WHEEL_SENSOR: wheelSen
 export type DiagnosisTemplateKey = keyof typeof TEMPLATES
 
 export function buildDiagnosis(repair: Repair, key: DiagnosisTemplateKey, version = 1, minutesAgo = 30): Diagnosis {
-  const prefix = repair.images.find((i) => i.kind === 'MECHANICAL')?.id.replace(/-img-m$/, '') ?? `r${repair.id}`
+  const prefix = repair.images.find((i) => i.kind === 'MOTOR')?.id.replace(/-img-m$/, '') ?? `r${repair.id}`
   const t = TEMPLATES[key](prefix)
   // 실제 업로드 이미지 ID 와 연결 (신규 접수 건 대응)
   const imgByKind = (k: string) => repair.images.find((i) => i.kind === k)?.id
@@ -340,7 +340,7 @@ export function buildDiagnosis(repair: Repair, key: DiagnosisTemplateKey, versio
     ...a,
     annotations: a.annotations.map((an) => ({
       ...an,
-      imageId: an.imageId.endsWith('-img-m') ? (imgByKind('MECHANICAL') ?? an.imageId) : an.imageId.endsWith('-img-c') ? (imgByKind('PCB') ?? an.imageId) : an.imageId,
+      imageId: an.imageId.endsWith('-img-m') ? (imgByKind('MOTOR') ?? an.imageId) : an.imageId.endsWith('-img-c') ? (imgByKind('PCB') ?? an.imageId) : an.imageId,
     })),
   }))
   return {

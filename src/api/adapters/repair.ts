@@ -42,7 +42,7 @@ const URGENCIES: Urgency[] = ['HIGH', 'MEDIUM', 'LOW']
 function userInput(r: BeRepair) {
   const u = r.user_input ?? {}
   const urgency = URGENCIES.includes(u.urgency as Urgency) ? (u.urgency as Urgency) : 'MEDIUM'
-  const photoKinds = Array.isArray(u.photoKinds) ? (u.photoKinds as string[]) : []
+  const photoKinds = Array.isArray(u.photoKinds) ? (u.photoKinds as string[]).map((k) => (k === 'MECHANICAL' ? 'MOTOR' : k)) : []
   return { urgency, technicianNote: str(u.technicianNote) ?? str(u.customerDescription), photoKinds }
 }
 
@@ -121,13 +121,13 @@ export function toTools(execs: BeToolExecution[]): AnalysisToolRun[] {
 /** 첨부 URL — 같은 origin 세션 쿠키로 GET /api/attachments/{id} */
 export const attachmentUrl = (id: string) => `${API_BASE}/attachments/${id}`
 
-/** 첨부 → 화면 사진. 최초 접수 사진은 userInput.photoKinds 순서로 PCB/MECHANICAL, 추가 요청 사진은 ADDITIONAL */
+/** 첨부 → 화면 사진. 최초 접수 사진은 userInput.photoKinds 순서로 PCB/MOTOR, 추가 요청 사진은 ADDITIONAL */
 export function toImages(atts: BeAttachment[], photoKinds: string[], requests: BePhotoRequest[] = []): RepairImage[] {
   const images = atts.filter((a) => a.kind === 'IMAGE').sort((a, b) => Number(a.id) - Number(b.id))
   let initial = 0
   return images.map((a) => {
     const req = a.request_id ? requests.find((p) => p.id === a.request_id) : undefined
-    const kind: PhotoKind = a.request_id ? 'ADDITIONAL' : ((photoKinds[initial++] as PhotoKind) ?? 'MECHANICAL')
+    const kind: PhotoKind = a.request_id ? 'ADDITIONAL' : ((photoKinds[initial++] as PhotoKind) ?? 'MOTOR')
     return { id: a.id, kind, url: attachmentUrl(a.id), name: a.original_name, uploadedAt: a.created_at, note: req?.target }
   })
 }

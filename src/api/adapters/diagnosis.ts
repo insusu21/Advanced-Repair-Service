@@ -1,7 +1,7 @@
-/* AI 진단 변환: 백엔드 Task(+result) · ToolExecution → 프론트 Diagnosis
+/* AI 진단 변환: 백엔드 Task(+result) · ToolExecution → 프론트 Diagnosis (에이전트 v2 필드가 있으면 우선 사용)
  * 백엔드에 없는 필드(에러코드 해석·유사 사례·점검 순서)는 빈 배열로 두고, 화면은 데이터가 없으면 해당 카드를 숨긴다. */
 import type { AgentResult, AgentType, AgentVerdict, DataSource, Decision, Diagnosis, ImageAnnotation, Part, Urgency } from '@/types'
-import type { BeEvidence, BeTask, BeToolExecution } from './types'
+import type { BeAgent, BeCandidate, BeEvidence, BeSimilarCase, BeTask, BeToolExecution } from './types'
 
 /** 백엔드·AI 서버 confidence 는 0~1 → 화면 'AI 판단 점수' 0~100 (확률이 아니라 후보 비교 점수) */
 const pct = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100)
@@ -75,16 +75,56 @@ export function toAgents(tools: BeToolExecution[], annotations: ImageAnnotation[
   })
 }
 
+/** 에이전트 v2 result.agents → Agent 별 결과 (박스 좌표 0~1 → %) */
+function fromResultAgents(agents: BeAgent[], tools: BeToolExecution[]): AgentResult[] {
+  return agents.flatMap((a) => {
+    const agent = agentOf(a.agent)
+    if (!agent) return []
+    const run = tools.find((t) => t.tool_name === a.tool)
+    const dur = run?.finished_at ? (new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000 : 0
+    const v = a.verdict?.toUpperCase()
+    return [{
+      agent,
+      verdict: (['NORMAL', 'ABNORMAL', 'SUSPICIOUS', 'SKIPPED'] as const).find((x) => x === v) ?? 'SUSPICIOUS',
+      summary: a.summary,
+      findings: a.findings ?? [],
+      confidence: pct(a.confidence ?? 0),
+      annotations: (a.annotations ?? []).map((b) => ({
+        imageId: String(b.attachmentId),
+        label: b.label,
+        x: b.x * 100,
+        y: b.y * 100,
+        w: b.width * 100,
+        h: b.height * 100,
+        severity: b.score >= 0.8 ? 'HIGH' : b.score >= 0.5 ? 'MEDIUM' : 'LOW',
+      })),
+      sourceIds: [],
+      durationSec: Math.max(0, Math.round(dur)),
+    }]
+  })
+}
+
+/** 유사 사례 (RAG) → 화면 사례. 모델·종결일 정보는 없어 '-' */
+const toCase = (c: BeSimilarCase) => ({ receiptNo: c.caseId, model: c.origin === 'EXTERNAL' ? '외부 사례' : '내부 사례', cause: c.summaryKo, resolution: c.originalText ?? '', similarity: pct(c.similarity), closedAt: '' })
+
 export function toDiagnosis(
   task: BeTask,
   ctx: { parts: Part[]; tools?: BeToolExecution[]; urgency: Urgency; decision: Decision },
 ): Diagnosis | null {
   const res = task.result
-  const candidates = task.candidates?.length ? task.candidates : (res?.candidates ?? [])
+  // result.candidates(camelCase)가 원본. task.candidates 는 백엔드 정규화 테이블(snake_case: cause_code·cause_description)
+  const candidates: BeCandidate[] = res?.candidates?.length
+    ? res.candidates
+    : (task.candidates ?? []).map((c) => {
+        const r = c as unknown as Record<string, unknown>
+        return { ...c, cause: c.cause ?? String(r.cause_code ?? '-'), explanation: c.explanation ?? String(r.cause_description ?? '') }
+      })
   if (!res && !candidates.length) return null
-  const evidence = (task.evidence?.length ? task.evidence : res?.evidence) ?? []
+  const evidence = (res?.evidence?.length ? res.evidence : task.evidence) ?? []
   const recommended = (task.recommendedParts?.length ? task.recommendedParts : res?.recommendedParts) ?? []
-  const sources = evidence.map(toSource)
+  const sources: DataSource[] = res?.sources?.length
+    ? res.sources.map((x) => ({ id: x.id, type: EVIDENCE_TYPE[x.type?.toUpperCase()] ?? 'MANUAL', title: x.title, ref: x.ref }))
+    : evidence.map(toSource)
   const sorted = [...candidates].sort((a, b) => a.rank - b.rank)
   const annotations = evidence.map(toAnnotation).filter((x): x is ImageAnnotation => !!x)
   return {
@@ -93,23 +133,23 @@ export function toDiagnosis(
     version: task.input_revision,
     origin: 'AI',
     generatedAt: task.finished_at ?? task.updated_at,
-    topCause: sorted[0]?.cause ?? res?.summary ?? '-',
+    topCause: res?.topCause ?? sorted[0]?.cause ?? res?.summary ?? '-',
     confidence: sorted[0] ? pct(sorted[0].confidence) : 0,
-    urgency: ctx.urgency,
+    urgency: res?.urgency ?? ctx.urgency,
     candidates: sorted.map((c) => ({
       rank: c.rank,
-      cause: c.cause,
+      cause: c.causeCode ? `${c.cause} · ${c.causeCode}` : c.cause,
       confidence: pct(c.confidence),
-      evidence: c.explanation ? [c.explanation] : [],
-      // 후보별 근거 연결 정보가 없어 1순위에만 전체 출처를 붙인다
-      sourceIds: c.rank === sorted[0]?.rank ? sources.map((s) => s.id) : [],
+      evidence: [c.explanation, ...(c.evidenceNotes ?? [])].filter(Boolean),
+      // v2 는 후보별 출처(sourceIds)가 있다. 없으면 1순위에만 전체 출처를 붙인다
+      sourceIds: c.sourceIds ?? (c.rank === sorted[0]?.rank ? sources.map((s) => s.id) : []),
     })),
-    agents: toAgents(ctx.tools ?? [], annotations),
+    agents: res?.agents?.length ? fromResultAgents(res.agents, ctx.tools ?? []) : toAgents(ctx.tools ?? [], annotations),
     errorCodes: [],
-    similarCases: [],
-    similarCaseCount: 0,
-    inspectionSteps: [],
-    repairMethod: splitSteps(res?.repairMethod),
+    similarCases: (res?.similarCases ?? []).map(toCase),
+    similarCaseCount: res?.similarCases?.length ?? 0,
+    inspectionSteps: res?.inspectionSteps ?? [],
+    repairMethod: res?.repairSteps?.length ? res.repairSteps : splitSteps(res?.repairMethod),
     parts: recommended.map((p) => {
       const part = ctx.parts.find((x) => x.id === p.partId)
       return { partId: p.partId, partName: part?.name ?? `부품 #${p.partId}`, partNo: part?.partNo ?? '-', quantity: p.quantity, reason: res?.summary ?? '' }

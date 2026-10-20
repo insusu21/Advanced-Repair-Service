@@ -187,7 +187,7 @@ export function submitRepair(id: number): Repair {
   const u = requireRole('TECHNICIAN')
   const r = repairOr404(id)
   const kinds = new Set(r.images.map((i) => i.kind))
-  if (!kinds.has('PCB') || !kinds.has('MECHANICAL')) throw new ApiError(422, 'PCB 사진과 기계·찌그러짐 사진이 모두 필요합니다.')
+  if (!kinds.has('PCB') || !kinds.has('MOTOR')) throw new ApiError(422, 'PCB 사진과 기계·찌그러짐 사진이 모두 필요합니다.')
   r.status = 'RECEIVED'
   log(r, { target: 'SYSTEM', action: 'SUBMITTED', actor: u.name, actorRole: 'TECHNICIAN', comment: `사진 ${r.images.length}장 등록 · AI 진단 요청` })
   persist()
