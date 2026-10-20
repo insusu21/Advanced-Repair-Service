@@ -25,7 +25,8 @@ const idLabel = USE_MOCK ? '사번' : '이메일'
 
 function validate() {
   const v = form.employeeId.trim()
-  errors.employeeId = !v ? `${idLabel}을 입력해 주세요.` : !USE_MOCK && !/^\S+@\S+\.\S+$/.test(v) ? '이메일 형식이 올바르지 않습니다.' : undefined
+  // [통합] 이메일 형식 검사 제거: 백엔드 dev 계정 아이디가 tech1·tech2·quality(이메일 아님)라 로그인이 막혔다. 틀린 값은 서버가 401로 거른다
+  errors.employeeId = !v ? `${idLabel}을 입력해 주세요.` : undefined
   errors.password = form.password ? undefined : '비밀번호를 입력해 주세요.'
   return !errors.employeeId && !errors.password
 }
