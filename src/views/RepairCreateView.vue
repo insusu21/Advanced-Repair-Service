@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, CircleAlert, CircleCheck, Search, Send, X, Loade
 import StepIndicator from '@/components/repair/StepIndicator.vue'
 import ImageUploader from '@/components/repair/ImageUploader.vue'
 import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
-import { repairApi, toErrorMessage } from '@/api'
+import { repairApi, toErrorMessage, USE_MOCK } from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { PHOTO_KIND_LABEL, PHOTO_LIMIT } from '@/constants/status'
 import type { PhotoKind, ProductInfo, Urgency } from '@/types'
@@ -117,9 +117,22 @@ async function doSubmit() {
   submit.running = true
   submit.error = null
   try {
+    const req = { product: form.product, symptom: form.symptom.trim(), technicianNote: form.technicianNote.trim() || undefined, errorCodes: form.errorCodes, urgency: form.urgency }
+    if (!USE_MOCK) {
+      // 실서버: 접수 정보 + 사진을 multipart 한 번으로 보내고(202), 서버가 진단 작업까지 만든다
+      submit.phase = 'create'
+      const files = PHOTO_KINDS.flatMap((kind) => photos[kind].map((p) => ({ kind: kind as PhotoKind, file: p.file })))
+      const { repairId: id } = await repairApi.intake(req, files)
+      submit.repairId = id
+      submit.phase = 'done'
+      dirty.value = false
+      toast.success(`수리 ID ${repairId(id)} 로 접수되었습니다. AI 분석을 시작합니다.`)
+      void router.replace(`/repairs/${id}/progress`)
+      return
+    }
     if (!submit.repairId) {
       submit.phase = 'create'
-      const r = await repairApi.create({ product: form.product, symptom: form.symptom.trim(), technicianNote: form.technicianNote.trim() || undefined, errorCodes: form.errorCodes, urgency: form.urgency })
+      const r = await repairApi.create(req)
       submit.repairId = r.id
     }
     submit.phase = 'upload'
@@ -201,14 +214,14 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <div><dt>모델</dt><dd>{{ form.product.model }}</dd></div>
           <div><dt>생산 공장</dt><dd>{{ form.product.factory }}</dd></div>
           <div><dt>제조일</dt><dd>{{ formatDate(form.product.manufacturedAt) }}</dd></div>
-          <div>
+          <div v-if="form.product.warrantyUntil">
             <dt>보증 기간</dt>
             <dd>
               {{ formatDate(form.product.warrantyUntil) }}까지
               <span class="badge" :class="new Date(form.product.warrantyUntil) > new Date() ? 'tone-success' : 'tone-neutral'">{{ new Date(form.product.warrantyUntil) > new Date() ? '보증 중' : '보증 만료' }}</span>
             </dd>
           </div>
-          <div><dt>펌웨어</dt><dd>{{ form.product.firmware }}</dd></div>
+          <div><dt>펌웨어</dt><dd>{{ form.product.firmware || '-' }}</dd></div>
         </dl>
       </div>
       <SameSerialHistory v-if="form.product" :serial="form.product.serialNumber" compact new-tab />

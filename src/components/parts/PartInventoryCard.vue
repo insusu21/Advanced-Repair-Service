@@ -48,16 +48,27 @@ const eta = computed(() => {
       <dl class="kv">
         <dt><Factory :size="15" /> 생산 공장</dt>
         <dd>{{ part.factory }}</dd>
-        <dt>공장 담당</dt>
-        <dd>{{ part.factoryContact.manager }}</dd>
-        <dt><Phone :size="15" /> 연락처</dt>
-        <dd><a :href="`tel:${part.factoryContact.phone}`">{{ part.factoryContact.phone }}</a></dd>
-        <dt><Mail :size="15" /> 이메일</dt>
-        <dd><a :href="`mailto:${part.factoryContact.email}`">{{ part.factoryContact.email }}</a></dd>
-        <dt><CalendarClock :size="15" /> 예상 입고일</dt>
-        <dd>{{ part.leadTimeDays }}일 (약 {{ eta }})</dd>
-        <dt>단가</dt>
-        <dd>{{ formatNumber(part.unitPrice) }}원</dd>
+        <!-- 실서버에는 공장 담당자·이메일·단가 정보가 없어 값이 있을 때만 표시 -->
+        <template v-if="part.factoryContact.manager">
+          <dt>공장 담당</dt>
+          <dd>{{ part.factoryContact.manager }}</dd>
+        </template>
+        <template v-if="part.factoryContact.phone">
+          <dt><Phone :size="15" /> 연락처</dt>
+          <dd><a :href="`tel:${part.factoryContact.phone}`">{{ part.factoryContact.phone }}</a></dd>
+        </template>
+        <template v-if="part.factoryContact.email">
+          <dt><Mail :size="15" /> 이메일</dt>
+          <dd><a :href="`mailto:${part.factoryContact.email}`">{{ part.factoryContact.email }}</a></dd>
+        </template>
+        <template v-if="part.leadTimeDays">
+          <dt><CalendarClock :size="15" /> 예상 입고일</dt>
+          <dd>{{ part.leadTimeDays }}일 (약 {{ eta }})</dd>
+        </template>
+        <template v-if="part.unitPrice">
+          <dt>단가</dt>
+          <dd>{{ formatNumber(part.unitPrice) }}원</dd>
+        </template>
       </dl>
       <slot />
     </div>

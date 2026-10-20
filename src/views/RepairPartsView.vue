@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
 import { repairId } from '@/utils/format'
+import { isCompatible } from '@/utils/parts'
 import type { Part, PurchaseOrder } from '@/types'
 
 const route = useRoute()
@@ -34,7 +35,7 @@ onMounted(load)
 
 const confirmed = computed(() => detail.diagnosis?.technicianDecision.state === 'APPROVED')
 const neededPartIds = computed(() => [...new Set([...(detail.diagnosis?.parts.map((p) => p.partId) ?? []), ...orders.repairOrders.map((o) => o.partId)])])
-const compatible = computed(() => orders.parts.filter((p) => detail.repair && p.compatibleModels.includes(detail.repair.product.model) && !neededPartIds.value.includes(p.id)))
+const compatible = computed(() => orders.parts.filter((p) => detail.repair && isCompatible(p, detail.repair.product.model) && !neededPartIds.value.includes(p.id)))
 
 async function request(o: PurchaseOrder, payload: { quantity: number; fromWarehouse: string; comment: string }) {
   try {

@@ -295,53 +295,76 @@ components/
 
 ```
 View ─→ Pinia store ─→ src/api/*.ts ─┬─ VITE_USE_MOCK=true  → mocks/handlers.ts (지연·복사본 응답)
-                                     └─ false               → axios(http.ts) → /api (Vite proxy)
+                                     └─ false               → axios(http.ts, 세션 쿠키 + CSRF) → /api (Vite proxy)
+                                                               └─ src/api/adapters/* : snake_case·문자열 ID → 프론트 타입
 View ─→ store.subscribe ─→ services/sse.ts ─┬─ mock → mocks/db 이벤트 버스
-                                             └─ real → EventSource + 지수 백오프 재연결
+                                             └─ real → EventSource(withCredentials) named event → 상세 재조회
 ```
 
-| Method | Path | 용도 |
+화면·스토어는 `src/types` 의 프론트 타입만 쓴다. 실서버 응답(snake_case, ID 는 `"101"` 같은 십진수 문자열)은 `src/api/adapters/` 에서 변환하고 ID 는 `Number()` 로 바꾼다.
+백엔드에 아직 없는 기능은 `src/api/features.ts` 의 `FEATURES` 로 끄고, 화면은 카드를 숨기거나 "준비 중" 을 표시한다.
+변환 확인: `src/api/adapters/__samples__.ts` 의 `runAllSamples()` (API.md 예시 + OpenAPI 스키마 기반 샘플 28개 검사).
+
+#### 실서버 API (백엔드 API v2 — [docs/API.md](https://github.com/skala-ai-agent-team6/backend/blob/main/docs/API.md), openapi.json)
+
+| Method | Path | 용도 · 프론트 변환 |
 |---|---|---|
-| POST | `/api/auth/login` | 로그인 |
-| GET | `/api/products/{serial}` | 시리얼 → 제품 자동 조회 *(추가)* |
-| POST | `/api/repairs` | 접수 생성 (DRAFT) |
-| POST | `/api/repairs/{id}/images` | 사진 업로드 (multipart: kind, file) |
-| POST | `/api/repairs/{id}/submit` | 접수 확정 + AI 진단 요청 *(추가)* |
-| GET | `/api/repairs?status&group&keyword&sort&model` | 목록 + 요약 카운트(`counts`) + 상태별 건수(`statusCounts`) |
-| GET | `/api/repairs/{id}` | 상세 |
-| GET | `/api/repairs/{id}/diagnosis` | `{ current, versions[] }` |
-| GET | `/api/repairs/{id}/events` | **SSE** 진행 상태 |
-| GET | `/api/repairs/{id}/photo-requests` | 추가 사진 요청 목록 *(추가)* |
-| POST | `/api/repairs/{id}/additional-images` | 추가 자료 (multipart: files 0장 이상, note, photoRequestId — 사진·설명 중 하나 이상 필수) |
-| PUT | `/api/repairs/{id}/report` | 리포트 초안 저장 `{ version, content: ReportContent }` → Repair. version 불일치 409 `REPORT_VERSION` |
-| POST | `/api/repairs/{id}/report/confirm` | 리포트 확정 `{ version }` → Repair (CLOSED, 고장 DB upsert) |
-| POST | `/api/repairs/{id}/images` (kind `BEFORE`/`AFTER`) | 수리 전·후 사진 (리포트 저장 전에 업로드) |
-| POST | `/api/repairs/{id}/approval` | `{ target: DIAGNOSIS\|TECH_REVIEW\|MANUAL_REVIEW, action, comment }` |
-| POST | `/api/repairs/{id}/reanalysis` | `{ reason, scope? }` |
-| GET | `/api/parts`, `/api/parts/{partId}/inventory` | 부품·재고 |
-| GET | `/api/repairs/{id}/orders` | AI 발주안 + 요청 내역 *(추가)* |
-| POST | `/api/repairs/{id}/orders` | 기사 발주 요청 등록 |
-| GET | `/api/orders`, POST `/api/orders/{id}/decision` | 발주 목록 / 본사 품질 담당자 승인·반려 *(추가)* |
-| GET | `/api/dashboard/defects?months=6` | 통계 (확정 리포트만) |
-| GET | `/api/dashboard/defects/records?dim&value` | 그래프 드릴다운 목록 *(추가)* |
-| GET/POST | `/api/notifications`, `/{id}/read`, `/read-all` | 알림 *(추가)* |
+| GET | `/api/auth/csrf` | `{headerName, token}` — 메모리 보관, POST/PUT/DELETE 에 자동 첨부 |
+| POST | `/api/auth/login` | form `username`(이메일)·`password` + CSRF → 성공 후 CSRF 재조회 |
+| GET | `/api/auth/me` · POST `/api/auth/logout` | 세션 복원 / 로그아웃 |
+| GET | `/api/products?serialNumber=` | 제품 조회 → `ProductInfo` (`id` = 접수 시 `productId`) |
+| POST | `/api/repairs` | multipart `data`(JSON: productId, symptoms, errorCodes, firmware, userInput{technicianNote, photoKinds[], urgency}) + `files`(1~10) → 202 `{repairId, taskId, status}` |
+| GET | `/api/repairs?page&size&status&serial` | 목록. 상태는 역변환해 전송, 검색어는 시리얼처럼 보일 때만 `serial`, 나머지는 화면에서 필터. `statusCounts` 없음 → 칩 건수 숨김 |
+| GET | `/api/repairs/{id}` | 상세(attachments·tasks·photoRequests·reports·orders) → `Repair` · 추가 사진 요청 |
+| GET | `/api/repairs/{id}/diagnosis` | Task + result(candidates·evidence·recommendedParts·summary·repairMethod) → `Diagnosis` |
+| GET | `/api/repairs/{id}/diagnosis/tools` | 도구 실행 이력 → Agent(PCB·MOTOR·SW) 카드 |
+| POST | `/api/repairs/{id}/attachments?requestId=` | 추가 사진 1장씩 → `attachmentId` |
+| POST | `/api/repairs/{id}/diagnosis/resume` | `{requestId, submissionKey(UUID), attachmentIds, note}` — `note` 는 스키마에 없어 무시될 수 있음 |
+| GET | `/api/attachments/{id}` | 사진 표시 (`<img>` src) |
+| GET | `/api/repairs/{id}/events` | **SSE** named event → 상세 GET 재조회 |
+| GET | `/api/repairs/{id}/report` | header + revisions → `RepairReport` (`confirmed_revision` 으로 확정 여부·이력) |
+| PUT | `/api/repairs/{id}/report/draft` | `{version(처음 0), content}` — 불일치 409 `REPORT_VERSION` |
+| POST | `/api/reports/{reportId}/confirm` | `{version, revision}` — 리포트 id·최신 revision 은 GET /report 로 확인 |
+| GET | `/api/parts` · `/api/parts/{id}/inventory` · `/api/parts/{id}/factories` | 부품 + 창고 재고(available) + 공급 공장(lead_days) → `Part` (30초 캐시) |
+| GET | `/api/repairs/{id}/procurement` | AI 조달 제안(스냅샷) → AI_DRAFT 카드 + 요청된 발주 |
+| GET | `/api/orders/{id}` | 발주 상세(품목) — 품목 1개 = 발주 카드 1장 (`id = 주문id#품목id`) |
+| POST | `/api/repairs/{id}/orders` | `{items:[{partId, quantity, source, warehouseId \| factoryId}]}` — 선택 창고 재고 부족이면 FACTORY |
+| POST | `/api/orders/{id}/approve` · `/reject` | `{reason}` — 발주 상태 PENDING→요청됨, APPROVED, ORDERED(출고), RECEIVED(수령), REJECTED, CANCELLED |
+| GET | `/api/dashboard?from&to&groupBy` | PERIOD·PART·CENTER·FACTORY·AREA 를 각각 호출해 합침 (확정 리포트만) |
 
-`GET /api/repairs` 상세 *(추가)*
-- `group`: `AI_ANALYSIS` · `TECHNICIAN` · `HQ` · `DONE` — 그룹에 속한 상태를 한 번에 필터링 (`STATUS_GROUPS`). `status` 가 함께 오면 `status` 가 우선
-  - AI_ANALYSIS: RECEIVED, QUEUED, ANALYZING / TECHNICIAN: ADDITIONAL_INFO_NEEDED, DIAGNOSIS_COMPLETED, TECHNICIAN_REVIEW, REJECTED / HQ: MANUAL_REVIEW / DONE: APPROVED, CLOSED
-- 응답 `statusCounts`: `{ [RepairStatus]: number }` — 상태별 건수. 권한 범위·`keyword`·`model` 은 반영하고 `status`·`group` 필터는 적용하기 전 기준 (칩을 눌렀을 때 나올 건수). 0건인 상태는 생략 가능
-- `statusCounts` 가 없거나 비어 있으면 화면은 칩 건수를 숨기고 필터만 동작
+접수 상태 매핑 (`adapters/status.ts`): RECEIVED→RECEIVED · DIAGNOSING→ANALYZING(작업 QUEUED 면 QUEUED) · WAITING_INPUT→ADDITIONAL_INFO_NEEDED · DIAGNOSED→DIAGNOSIS_COMPLETED · MANUAL_REVIEW→MANUAL_REVIEW · REPAIRING→TECHNICIAN_REVIEW · CLOSED→CLOSED · CANCELLED→CANCELLED(취소, 회색). 작업 FAILED 면 `analysisError`.
 
-SSE 이벤트 (요청서 스키마 + 확장 필드)
-```json
-{ "repairId": 101, "status": "ANALYZING", "stage": "PCB_ANALYSIS", "stageState": "RUNNING",
-  "message": "PCB 사진을 분석하고 있습니다.", "progress": 45, "at": "2026-10-19T08:02:11Z",
-  "photoRequest": null }
+백엔드에 없어 화면에서 막거나 "준비 중" 으로 표시하는 것 (`FEATURES`)
+- 진단 확인·반려·본사 검토 요청·수동 진단 회신, 재분석 요청 → 버튼 잠금/숨김
+- 수리 전·후 사진 업로드 → 리포트 사진 칸 숨김 (사진 없이 확정)
+- 추가 자료를 설명만 제출 → 사진 1장 이상 필요
+- 대시보드 모델별 · AI 진단 성공률/일치율 · 드릴다운 · 반복 고장 추세 → "준비 중" (부위별 AREA 차트로 대체)
+- 전체 발주 목록 API 없음 → 접수 목록(최대 100건) → 상세 orders → `GET /orders/{id}` 로 모음 (N+1 호출)
+- 알림 API 없음 → 빈 목록, 전역 SSE 없음 → 목록 실시간 갱신 없음
+
+#### Mock 전용 API (프론트 `mocks/handlers.ts` 에서만 동작, 실서버 경로 없음)
+
+| Method | Path (가상) | 용도 |
+|---|---|---|
+| POST | `/repairs` → `/repairs/{id}/images` → `/repairs/{id}/submit` | 단계별 접수 (실서버는 multipart 한 번) |
+| POST | `/repairs/{id}/images` (kind `BEFORE`/`AFTER`) | 수리 전·후 사진 |
+| POST | `/repairs/{id}/approval` · `/reanalysis` | 진단 확인·반려·본사 검토·수동 진단 회신 · 재분석 |
+| POST | `/repairs/{id}/additional-images` | 추가 사진 + 설명 (설명만 제출 가능) |
+| GET | `/repairs?…` 의 `statusCounts` · `group` | 상태별 건수 · 그룹 필터 (실서버는 화면에서 그룹 필터) |
+| GET | `/orders` | 전체 발주 목록 |
+| GET | `/dashboard/defects` · `/dashboard/defects/records` | 모델별·AI 일치율 포함 통계 · 드릴다운 |
+| GET/POST | `/notifications`, `/{id}/read`, `/read-all` | 알림 |
+
+SSE (실서버: `GET /api/repairs/{id}/events`, `EventSource(url, { withCredentials: true })`)
+```text
+id: 42
+event: PHOTO_REQUESTED
+data: {"taskId":"1","status":"WAITING_INPUT","inputRevision":1,"requestId":"1","round":1,"bodyPart":"wheel","description":"하부 사진 요청"}
 ```
-- `stage`: QUEUED · ORCHESTRATION · PCB_ANALYSIS · MOTOR_ANALYSIS · SW_ANALYSIS · SIMILAR_CASE_SEARCH · SYNTHESIS
-- `stageState`: PENDING · RUNNING · DONE · SKIPPED · FAILED · WAITING_INPUT
-- 서버는 기본 `message` 또는 `event: status` 로 전송 가능. EventSource 는 헤더를 못 붙이므로 토큰은 쿼리 또는 HttpOnly 쿠키.
-- 재연결: 1s→2s→4s… 최대 30s, 6회 실패 시 `error` 상태 표시. `DIAGNOSIS_COMPLETED`(100%) 수신 시 진단을 자동 재조회.
+- 구독 이벤트: REPAIR_CREATED · DIAGNOSIS_QUEUED · DIAGNOSIS_STARTED · DIAGNOSIS_PROGRESS · PHOTO_REQUESTED · DIAGNOSIS_RESUMED · DIAGNOSIS_COMPLETED · DIAGNOSIS_FAILED · ORDER_PROPOSED · REPORT_DRAFT_SAVED · REPORT_CONFIRMED
+- payload 는 쓰지 않고 상세를 GET 으로 다시 조회 (300ms 모아서 1회, 진단 완료·실패·재개면 진단도 재조회)
+- URL 에 토큰 없음(세션 쿠키), 재연결은 브라우저 기본(Last-Event-ID). 서버가 거부해 CLOSED 가 되면 "연결 실패" 표시
+- Mock 은 브라우저 내부 이벤트 버스로 `RepairEvent`(status·stage·progress·photoRequest) 를 바로 반영
 
 ---
 

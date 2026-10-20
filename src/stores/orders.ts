@@ -30,6 +30,16 @@ export const useOrderStore = defineStore('orders', () => {
     }
   }
 
+  /** 부품 목록만 (리포트 화면의 고장 부품 선택용). 이미 받았으면 다시 부르지 않음 */
+  async function fetchParts() {
+    if (parts.value.length) return
+    try {
+      parts.value = await partApi.list()
+    } catch (e) {
+      error.value = toErrorMessage(e)
+    }
+  }
+
   async function fetchForRepair(repairId: number) {
     loading.value = true
     error.value = null
@@ -67,5 +77,5 @@ export const useOrderStore = defineStore('orders', () => {
     }
   }
 
-  return { parts, orders, repairOrders, loading, submittingId, error, pendingApproval, partById, fetchAll, fetchForRepair, request, decide }
+  return { parts, orders, repairOrders, loading, submittingId, error, pendingApproval, partById, fetchAll, fetchParts, fetchForRepair, request, decide }
 })

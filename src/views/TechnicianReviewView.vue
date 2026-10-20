@@ -20,10 +20,12 @@ import { useRepairPage } from '@/composables/useRepairPage'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { AI_ACCEPTANCE_META, FAULT_AREA_LABEL, OUTCOME_META, REPORT_STATUS_META } from '@/constants/status'
-import { PARTS } from '@/mocks/data'
 import { ApiError, toErrorMessage } from '@/api'
+import { FEATURES } from '@/api/features'
+import { useOrderStore } from '@/stores/orders'
+import { isCompatible } from '@/utils/parts'
 import { formatDateTime } from '@/utils/format'
-import type { AiAcceptance, FaultArea, RepairOutcome, ReportContent } from '@/types'
+import type { AiAcceptance, FaultArea, Part, RepairOutcome, ReportContent } from '@/types'
 import type { UploadItem } from '@/types/upload'
 
 const { store, repair, diagnosis, loading, diagLoading, error, submitting, reload } = useRepairPage({ diagnosis: true })
@@ -125,7 +127,8 @@ const confirmErrs = computed(() => ({
   faults: form.outcome && form.outcome !== 'NO_FAULT_FOUND' && !form.faults.some((f) => f.area) ? '고장 부위를 1개 이상 추가하거나 처리 결과를 "고장 없음"으로 선택해 주세요.' : null,
   action: form.actualAction.trim().length < 5 ? '실제 조치 내용을 5자 이상 입력해 주세요.' : null,
   opinion: (form.aiAcceptance === 'PARTIAL' || form.aiAcceptance === 'REJECTED') && form.technicianOpinion.trim().length < 5 ? 'AI 진단과 다른 경우, 다른 점을 기사 의견에 적어 주세요.' : null,
-  after: form.outcome !== 'NO_FAULT_FOUND' && !after.value.length && !savedAfterPhotos.value.length ? '수리 후 사진을 1장 이상 등록해 주세요.' : null,
+  // 실서버는 수리 전·후 사진 업로드 API 가 없어 사진 없이 확정한다
+  after: FEATURES.reportPhotos && form.outcome !== 'NO_FAULT_FOUND' && !after.value.length && !savedAfterPhotos.value.length ? '수리 후 사진을 1장 이상 등록해 주세요.' : null,
 }))
 type ErrKey = keyof typeof confirmErrs.value
 const errOf = (k: ErrKey) => (touched.value === 'confirm' ? confirmErrs.value[k] : touched.value === 'draft' ? (draftErrs.value as Record<string, string | null>)[k] ?? null : null)
@@ -137,20 +140,25 @@ function focusFirstError() {
 }
 
 /* ---------- 고장 부위 ---------- */
-const partOptions = computed(() => PARTS.filter((p) => !repair.value || p.compatibleModels.includes(repair.value.product.model)))
-const partArea = (partNo: string): FaultArea => (partNo.startsWith('RM-PC') ? 'PCB' : 'MOTOR')
-const partName = (id?: string) => PARTS.find((p) => p.id === id)?.name
+// 부품 목록은 Mock·실서버 공통으로 부품 API 에서 받는다 (고장 부품 partId 는 서버 부품 id)
+const orders = useOrderStore()
+void orders.fetchParts()
+const partOptions = computed(() => orders.parts.filter((p) => isCompatible(p, repair.value?.product.model)))
+/** 부품 → 고장 부위. 실서버는 부품 category(PCB/MOTOR/OTHER), Mock 은 품번 접두어로 판단 */
+const partArea = (p?: Pick<Part, 'partNo' | 'category'>): FaultArea =>
+  p?.category ?? (p?.partNo.startsWith('RM-PC') ? 'PCB' : 'MOTOR')
+const partName = (id?: string) => orders.partById(id ?? '')?.name
 function addFault() {
   form.faults.push({ area: '', partId: '' })
 }
 function onFaultPart(i: number) {
   const f = form.faults[i]
-  const p = PARTS.find((x) => x.id === f.partId)
-  if (p && !f.area) f.area = partArea(p.partNo)
+  const p = orders.partById(f.partId)
+  if (p && !f.area) f.area = partArea(p)
 }
 function loadAiFaults() {
   if (!diagnosis.value) return
-  form.faults = diagnosis.value.parts.map((p) => ({ area: partArea(p.partNo), partId: p.partId }))
+  form.faults = diagnosis.value.parts.map((p) => ({ area: partArea(orders.partById(p.partId) ?? p), partId: p.partId }))
 }
 function loadAiAction() {
   if (!diagnosis.value) return
@@ -376,7 +384,7 @@ const faultText = (c: ReportContent) =>
             <p v-if="errOf('opinion')" class="error-text"><CircleAlert :size="16" /> {{ errOf('opinion') }}</p>
           </section>
 
-          <section class="card card-pad stack human-edge">
+          <section v-if="FEATURES.reportPhotos" class="card card-pad stack human-edge">
             <h2 class="section-title">7. 수리 전 · 후 사진</h2>
             <p v-if="savedBeforePhotos.length || savedAfterPhotos.length" class="faint">저장된 사진: 수리 전 {{ savedBeforePhotos.length }}장 · 수리 후 {{ savedAfterPhotos.length }}장 (아래에서 추가할 수 있습니다)</p>
             <div class="grid-2">

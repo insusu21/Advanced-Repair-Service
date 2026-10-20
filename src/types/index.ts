@@ -31,6 +31,8 @@ export type RepairStatus =
   | 'REJECTED'
   | 'MANUAL_REVIEW'
   | 'CLOSED'
+  /** 실서버 전용: 접수 취소 */
+  | 'CANCELLED'
 
 /** 접수 사진은 PCB · MECHANICAL(모터·외관 변형 등) 2종 */
 export type PhotoKind = 'PCB' | 'MECHANICAL' | 'ADDITIONAL' | 'BEFORE' | 'AFTER'
@@ -45,6 +47,8 @@ export interface RepairImage {
 }
 
 export interface ProductInfo {
+  /** 실서버 product.id (접수 시 productId 로 전송) */
+  id?: string
   serialNumber: string
   model: string
   modelName: string
@@ -290,8 +294,12 @@ export interface RepairReport {
 
 export interface WarehouseStock {
   warehouse: string
-  location: string // 랙 위치
+  location: string // 랙 위치 (실서버: 창고 주소)
+  /** 출고 가능 수량 (실서버: available = on_hand - reserved) */
   quantity: number
+  /** 실서버 warehouse_id (발주 source=WAREHOUSE 일 때 전송) */
+  warehouseId?: string
+  phone?: string | null
 }
 
 export interface Part {
@@ -304,9 +312,14 @@ export interface Part {
   factoryContact: { manager: string; phone: string; email: string }
   leadTimeDays: number
   unitPrice: number
+  /** 실서버: PCB | MOTOR | OTHER */
+  category?: 'PCB' | 'MOTOR' | 'OTHER'
+  /** 실서버 공급 공장 factory_id (발주 source=FACTORY 일 때 전송) */
+  factoryId?: string
 }
 
-export type OrderStatus = 'AI_DRAFT' | 'REQUESTED' | 'APPROVED' | 'REJECTED'
+/** 실서버 발주 상태 PENDING→REQUESTED, APPROVED, ORDERED(출고), RECEIVED(수령), REJECTED, CANCELLED */
+export type OrderStatus = 'AI_DRAFT' | 'REQUESTED' | 'APPROVED' | 'ORDERED' | 'RECEIVED' | 'REJECTED' | 'CANCELLED'
 
 export interface PurchaseOrder {
   id: string
@@ -382,6 +395,8 @@ export interface DefectDashboard {
   byFactory: CountItem[]
   trend: { month: string; received: number; defects: number }[]
   recurring: { type: string; count: number; models: string[]; trend: 'UP' | 'FLAT' | 'DOWN' }[]
+  /** 실서버: 고장 부위(PCB·MOTOR·SW·OTHER)별 건수 (groupBy=AREA) */
+  byArea?: CountItem[]
 }
 
 /* ---------------- 공통 ---------------- */

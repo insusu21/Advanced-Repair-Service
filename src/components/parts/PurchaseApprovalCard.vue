@@ -90,7 +90,12 @@ function decide(action: 'APPROVE' | 'REJECT') {
                 <dt>생산 공장</dt>
                 <dd>{{ part.factory }}</dd>
                 <dt>담당 · 연락처</dt>
-                <dd>{{ part.factoryContact.manager }} · <a :href="`tel:${part.factoryContact.phone}`">{{ part.factoryContact.phone }}</a> · <a :href="`mailto:${part.factoryContact.email}`">{{ part.factoryContact.email }}</a></dd>
+                <dd>
+                  <template v-if="part.factoryContact.manager">{{ part.factoryContact.manager }} · </template>
+                  <a v-if="part.factoryContact.phone" :href="`tel:${part.factoryContact.phone}`">{{ part.factoryContact.phone }}</a>
+                  <template v-if="part.factoryContact.email"> · <a :href="`mailto:${part.factoryContact.email}`">{{ part.factoryContact.email }}</a></template>
+                  <template v-if="!part.factoryContact.phone && !part.factoryContact.email">-</template>
+                </dd>
                 <dt>예상 입고일</dt>
                 <dd>{{ eta }} (생산 약 {{ part.leadTimeDays }}일)</dd>
               </dl>
@@ -128,7 +133,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
           <button type="button" class="btn btn-primary btn-lg" :disabled="busy" @click="submitRequest">
             <Send :size="20" /> {{ busy ? '등록 중…' : order.status === 'REJECTED' ? '발주 다시 요청' : '발주 요청 등록' }}
           </button>
-          <p v-if="part" class="faint">예상 금액 {{ formatNumber(part.unitPrice * qty) }}원</p>
+          <p v-if="part?.unitPrice" class="faint">예상 금액 {{ formatNumber(part.unitPrice * qty) }}원</p>
         </template>
 
         <template v-else>

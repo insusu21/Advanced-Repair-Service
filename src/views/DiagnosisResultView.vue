@@ -27,6 +27,7 @@ import { useRepairPage } from '@/composables/useRepairPage'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
+import { FEATURES } from '@/api/features'
 import { formatDate, reportTitle } from '@/utils/format'
 import type { ApprovalAction } from '@/types/approval'
 
@@ -43,8 +44,9 @@ watchEffect(() => {
 const approvalEl = ref<HTMLElement | null>(null)
 
 const isTech = computed(() => auth.role === 'TECHNICIAN')
-const canDecide = computed(() => isTech.value && repair.value?.status === 'DIAGNOSIS_COMPLETED')
+const canDecide = computed(() => FEATURES.diagnosisDecision && isTech.value && repair.value?.status === 'DIAGNOSIS_COMPLETED')
 const disabledReason = computed(() => {
+  if (!FEATURES.diagnosisDecision) return '진단 확인·반려 처리는 아직 백엔드에서 지원하지 않습니다. (조회 전용)'
   if (!isTech.value) return '진단 확인은 담당 서비스센터 기사만 할 수 있습니다. (조회 전용)'
   if (repair.value?.status !== 'DIAGNOSIS_COMPLETED') return '이미 처리되었거나 진단 확인 단계가 아닙니다.'
   return undefined
@@ -150,7 +152,8 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
           <div class="main stack">
             <DiagnosisEvidenceCard :candidates="diagnosis.candidates" :sources="diagnosis.sources" />
 
-            <section>
+            <!-- 백엔드에 없는 항목(Agent 결과·에러코드 해석·점검 순서·유사 사례·출처)은 데이터가 없으면 카드를 숨긴다 -->
+            <section v-if="agents.length">
               <div class="row between sec-h">
                 <h3 class="sec">PCB · 모터 · SW 개별 분석 결과</h3>
                 <AiBadge compact />
@@ -160,13 +163,12 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
               </div>
             </section>
 
-            <section class="card">
+            <section v-if="diagnosis.errorCodes.length" class="card">
               <div class="card-head">
                 <h3><FileCode2 :size="20" /> 에러 코드 분석</h3>
                 <AiBadge compact />
               </div>
               <div class="card-body stack">
-                <p v-if="!diagnosis.errorCodes.length" class="faint">입력된 에러 코드가 없습니다.</p>
                 <div v-for="ec in diagnosis.errorCodes" :key="ec.code" class="ec">
                   <span class="badge tone-info mono code">{{ ec.code }}</span>
                   <div class="stack" style="gap: 6px">
@@ -178,8 +180,8 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
               </div>
             </section>
 
-            <div class="grid-2">
-              <section class="card">
+            <div :class="{ 'grid-2': diagnosis.inspectionSteps.length && diagnosis.repairMethod.length }">
+              <section v-if="diagnosis.inspectionSteps.length" class="card">
                 <div class="card-head">
                   <h3><ClipboardList :size="20" /> 권장 점검 순서</h3>
                   <AiBadge compact />
@@ -188,7 +190,7 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
                   <li v-for="s in diagnosis.inspectionSteps" :key="s">{{ s }}</li>
                 </ol>
               </section>
-              <section class="card">
+              <section v-if="diagnosis.repairMethod.length" class="card">
                 <div class="card-head">
                   <h3><Wrench :size="20" /> 권장 수리 방법</h3>
                   <AiBadge compact />
@@ -220,7 +222,7 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
               </div>
             </section>
 
-            <section class="card">
+            <section v-if="diagnosis.similarCases.length" class="card">
               <div class="card-head">
                 <h3><Layers :size="20" /> 유사 수리 사례</h3>
                 <span class="badge tone-neutral">{{ diagnosis.similarCaseCount }}건</span>
@@ -240,7 +242,7 @@ const scrollToApproval = () => approvalEl.value?.scrollIntoView({ behavior: 'smo
               </button>
             </section>
 
-            <section class="card">
+            <section v-if="diagnosis.sources.length" class="card">
               <div class="card-head"><h3><BookOpen :size="20" /> 참고 매뉴얼 · 데이터 출처</h3></div>
               <div class="card-body"><DataSourceList :sources="diagnosis.sources" /></div>
             </section>

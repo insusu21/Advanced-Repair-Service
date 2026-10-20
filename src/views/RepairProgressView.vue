@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { PHOTO_KIND_LABEL, STAGE_META } from '@/constants/status'
 import { toErrorMessage } from '@/api'
+import { FEATURES } from '@/api/features'
 import { formatDateTime } from '@/utils/format'
 import type { UploadItem } from '@/types/upload'
 
@@ -120,7 +121,8 @@ async function confirmDialog() {
           <strong>분석에 실패했습니다.</strong>
           {{ repair.analysisError }}
         </div>
-        <template v-if="isTech">
+        <!-- 실서버: 재분석·본사 검토 요청 API 가 아직 없어 버튼을 숨긴다 -->
+        <template v-if="isTech && FEATURES.reanalysis">
           <button class="btn btn-ai" type="button" @click="dlg.open('reanalyze', '재분석 요청', '재분석 요청 사유', '예) PCB 사진을 다시 찍어 올렸습니다.')"><RotateCw :size="18" /> 재분석 요청</button>
           <button class="btn btn-danger" type="button" @click="dlg.open('hq', '본사 수동 검토 요청', '요청 사유', '예) 사진 재촬영으로도 판독이 어렵습니다.')"><Building2 :size="18" /> 본사 검토 요청</button>
         </template>

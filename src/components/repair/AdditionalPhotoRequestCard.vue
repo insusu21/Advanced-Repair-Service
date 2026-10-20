@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { Camera, Send, TriangleAlert } from 'lucide-vue-next'
 import ImageUploader from './ImageUploader.vue'
 import AiBadge from '@/components/common/AiBadge.vue'
+import { FEATURES } from '@/api/features'
 import type { PhotoRequest } from '@/types'
 import type { UploadItem } from '@/types/upload'
 import { formatDateTime } from '@/utils/format'
@@ -12,7 +13,8 @@ const props = defineProps<{ request: PhotoRequest; busy?: boolean; readonly?: bo
 const emit = defineEmits<{ submit: [{ photos: UploadItem[]; note: string }] }>()
 const photos = ref<UploadItem[]>([])
 const note = ref('')
-const canSubmit = computed(() => photos.value.length > 0 || note.value.trim().length > 0)
+// 실서버는 사진 1장 이상 필요 (설명만 제출은 아직 미지원)
+const canSubmit = computed(() => photos.value.length > 0 || (FEATURES.additionalNoteOnly && note.value.trim().length > 0))
 const remaining = computed(() => props.request.maxRequests - props.request.requestNo)
 </script>
 
@@ -50,7 +52,7 @@ const remaining = computed(() => props.request.maxRequests - props.request.reque
         <div class="field">
           <label :for="`note-${request.id}`">추가 설명 <span class="faint">(선택)</span></label>
           <textarea :id="`note-${request.id}`" v-model="note" class="textarea" maxlength="1000" placeholder="사진으로 보이지 않는 점이나 직접 확인한 상태를 적어 주세요. 예) 연결부를 손으로 눌러 보니 유격이 있음" />
-          <p class="help">사진이나 설명 중 하나는 있어야 제출할 수 있습니다.</p>
+          <p class="help">{{ FEATURES.additionalNoteOnly ? '사진이나 설명 중 하나는 있어야 제출할 수 있습니다.' : '사진을 1장 이상 올려야 제출할 수 있습니다. 설명은 함께 전달됩니다.' }}</p>
         </div>
         <div class="row" style="justify-content: flex-end">
           <button class="btn btn-primary btn-lg" type="button" :disabled="!canSubmit || busy" @click="emit('submit', { photos, note: note.trim() })">

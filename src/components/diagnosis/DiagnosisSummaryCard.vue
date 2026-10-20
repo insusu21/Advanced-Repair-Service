@@ -33,7 +33,7 @@ const decIcon = computed(() => (dec.value.state === 'APPROVED' ? UserCheck : dec
           <span class="ml"><Clock :size="16" /> 분석 완료</span>
           <strong>{{ formatDateTime(diagnosis.generatedAt) }}</strong>
         </div>
-        <div class="m">
+        <div v-if="diagnosis.similarCases.length" class="m">
           <span class="ml"><Layers :size="16" /> 유사 사례</span>
           <strong>{{ diagnosis.similarCaseCount }}건</strong>
         </div>

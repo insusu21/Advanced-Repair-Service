@@ -7,6 +7,7 @@ import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import type { DrillDim } from '@/api/dashboard'
+import { FEATURES } from '@/api/features'
 import { formatDate, formatNumber, repairId } from '@/utils/format'
 
 const store = useDashboardStore()
@@ -18,7 +19,11 @@ onMounted(() => {
 
 const d = computed(() => store.data)
 const DIM_LABEL: Record<DrillDim, string> = { part: '부품', model: '제품 모델', branch: '서비스센터', factory: '생산 공장', month: '기간', cause: '고장 유형' }
+/** 실서버에는 모델별·AI 일치율·드릴다운 API 가 없어 해당 항목은 '준비 중' */
+const extras = FEATURES.dashboardExtras
+const rate = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '준비 중')
 async function drill(dim: DrillDim, value: string) {
+  if (!extras) return
   await store.drillDown(dim, value, `${DIM_LABEL[dim]}: ${value}`)
   await nextTick()
   drillEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -29,8 +34,8 @@ const kpis = computed(() =>
     ? [
         { label: '전체 접수 건수', value: formatNumber(d.value.totalReceived), unit: '건', icon: ClipboardList, tone: 'info', hint: d.value.periodLabel },
         { label: '수리 완료 건수', value: formatNumber(d.value.completed), unit: '건', icon: CircleCheck, tone: 'success', hint: '리포트 확정 기준' },
-        { label: 'AI 진단 성공률', value: d.value.aiSuccessRate.toFixed(1), unit: '%', icon: Sparkles, tone: 'ai', hint: '분석 실패·판독 불가 제외 비율' },
-        { label: 'AI 진단 ↔ 실제 원인 일치율', value: d.value.aiMatchRate.toFixed(1), unit: '%', icon: Target, tone: d.value.aiMatchRate >= 80 ? 'success' : 'warning', hint: '기사가 확정한 리포트 기준' },
+        { label: 'AI 진단 성공률', value: rate(d.value.aiSuccessRate), unit: Number.isFinite(d.value.aiSuccessRate) ? '%' : '', icon: Sparkles, tone: 'ai', hint: '분석 실패·판독 불가 제외 비율' },
+        { label: 'AI 진단 ↔ 실제 원인 일치율', value: rate(d.value.aiMatchRate), unit: Number.isFinite(d.value.aiMatchRate) ? '%' : '', icon: Target, tone: !Number.isFinite(d.value.aiMatchRate) ? 'neutral' : d.value.aiMatchRate >= 80 ? 'success' : 'warning', hint: '기사가 확정한 리포트 기준' },
       ]
     : [],
 )
@@ -41,7 +46,7 @@ const kpis = computed(() =>
     <div class="page-head">
       <div>
         <h1>품질 대시보드</h1>
-        <p class="sub"><ShieldCheck :size="16" /> 기사가 확정한 수리 리포트만 집계합니다. 그래프 항목을 누르면 관련 수리 목록을 볼 수 있습니다.</p>
+        <p class="sub"><ShieldCheck :size="16" /> 기사가 확정한 수리 리포트만 집계합니다.<template v-if="extras"> 그래프 항목을 누르면 관련 수리 목록을 볼 수 있습니다.</template></p>
       </div>
       <div class="row">
         <label for="period" class="label">기간</label>
@@ -66,7 +71,7 @@ const kpis = computed(() =>
         </div>
       </div>
 
-      <p class="hint faint"><MousePointerClick :size="16" /> 막대·점·조각을 누르면 아래에 관련 수리 목록이 표시됩니다.</p>
+      <p v-if="extras" class="hint faint"><MousePointerClick :size="16" /> 막대·점·조각을 누르면 아래에 관련 수리 목록이 표시됩니다.</p>
 
       <section class="card">
         <div class="card-head"><h2>기간별 고장 추이</h2><span class="faint">{{ d.periodLabel }}</span></div>
@@ -74,10 +79,14 @@ const kpis = computed(() =>
           <DefectStatisticsChart
             type="line"
             :labels="d.trend.map((t) => t.month)"
-            :series="[
-              { name: '접수', data: d.trend.map((t) => t.received), color: '#8b97b0' },
-              { name: '승인된 고장', data: d.trend.map((t) => t.defects), color: '#1f3672' },
-            ]"
+            :series="
+              extras
+                ? [
+                    { name: '접수', data: d.trend.map((t) => t.received), color: '#8b97b0' },
+                    { name: '승인된 고장', data: d.trend.map((t) => t.defects), color: '#1f3672' },
+                  ]
+                : [{ name: '확정된 고장', data: d.trend.map((t) => t.defects), color: '#1f3672' }]
+            "
             chart-label="월별 접수 및 승인 고장 건수 추이"
             :height="280"
             @select="drill('month', $event)"
@@ -94,7 +103,8 @@ const kpis = computed(() =>
         </section>
         <section class="card">
           <div class="card-head"><h2>제품 모델별 고장 빈도</h2></div>
-          <div class="card-body">
+          <div v-if="!extras" class="card-body"><p class="soon">준비 중 · 백엔드 모델별 집계(groupBy) 지원 후 표시됩니다.</p></div>
+          <div v-else class="card-body">
             <DefectStatisticsChart type="bar" :labels="d.byModel.map((x) => x.label)" :series="[{ name: '고장', data: d.byModel.map((x) => x.count) }]" :selected="sel('model')" chart-label="모델별 고장 빈도" @select="drill('model', $event)" />
           </div>
         </section>
@@ -112,7 +122,16 @@ const kpis = computed(() =>
         </section>
       </div>
 
-      <section class="card">
+      <!-- 실서버: 반복 고장 추세 대신 고장 부위(AREA)별 건수 -->
+      <section v-if="!extras" class="card">
+        <div class="card-head"><h2>고장 부위별 건수</h2><span class="faint">PCB · 모터 · 소프트웨어 · 기타</span></div>
+        <div class="card-body">
+          <DefectStatisticsChart v-if="d.byArea?.length" type="hbar" :labels="d.byArea.map((x) => x.label)" :series="[{ name: '고장', data: d.byArea.map((x) => x.count) }]" chart-label="고장 부위별 건수" />
+          <p v-else class="soon">해당 기간에 확정된 고장 부위 데이터가 없습니다.</p>
+          <p class="soon">반복 고장 유형의 추세(증가·감소)는 준비 중입니다.</p>
+        </div>
+      </section>
+      <section v-else class="card">
         <div class="card-head"><h2>반복적으로 발생하는 고장 유형</h2><span class="faint">최근 2개월 vs 이전 평균</span></div>
         <div class="table-wrap">
           <table class="table">
@@ -171,6 +190,10 @@ const kpis = computed(() =>
 </template>
 
 <style scoped>
+.soon {
+  color: var(--text-3);
+  padding: 12px 0;
+}
 .sub {
   display: inline-flex;
   align-items: center;

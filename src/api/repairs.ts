@@ -1,5 +1,14 @@
-import { http, mockDelay, USE_MOCK } from './http'
+/* 접수 · 진단 · 추가 사진 · 리포트 API
+ * Mock: src/mocks/handlers.ts / 실서버: 백엔드 API v2 (응답은 src/api/adapters 에서 프론트 타입으로 변환) */
+import { ApiError, http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
+import { partApi } from './parts'
+import { STATUS_GROUPS } from '@/constants/status'
+import { latestTask, toPhotoRequest, toProductInfo, toRepair, toRepairDetail } from './adapters/repair'
+import { toBeContent, toRepairReport } from './adapters/report'
+import { toDiagnosis } from './adapters/diagnosis'
+import { toBeRepairStatus } from './adapters/status'
+import type { BeAccepted, BeProduct, BeReport, BeRepairDetail, BeRepairPage, BeTask, BeToolExecution, BeUploaded } from './adapters/types'
 import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
   AdditionalInfoRequest,
@@ -17,94 +26,220 @@ export interface DiagnosisResponse {
   versions: Diagnosis[]
 }
 
-function toForm(req: UploadImageRequest) {
-  const f = new FormData()
-  f.append('kind', req.kind)
-  f.append('file', req.file)
-  if (req.photoRequestId) f.append('photoRequestId', req.photoRequestId)
-  return f
+const notSupported = (what: string) => new ApiError(501, `${what}은(는) 아직 백엔드에서 지원하지 않습니다.`, 'NOT_SUPPORTED')
+
+/* ---------- 실서버 공통 ---------- */
+/** 상세는 한 화면에서 여러 번(상세·사진 요청·진단) 쓰이므로 1.5초 안의 중복 요청을 합친다 */
+const detailCache = new Map<number, { at: number; p: Promise<BeRepairDetail> }>()
+function fetchDetail(id: number, fresh = false): Promise<BeRepairDetail> {
+  const hit = detailCache.get(id)
+  if (!fresh && hit && Date.now() - hit.at < 1500) return hit.p
+  const p = http.get<BeRepairDetail>(`/repairs/${id}`).then((r) => r.data)
+  detailCache.set(id, { at: Date.now(), p })
+  p.catch(() => detailCache.delete(id))
+  return p
+}
+async function fetchReport(id: number): Promise<BeReport | null> {
+  try {
+    return (await http.get<BeReport>(`/repairs/${id}/report`)).data
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null
+    throw e
+  }
+}
+async function realGet(id: number, fresh = false): Promise<Repair> {
+  const d = await fetchDetail(id, fresh)
+  const report = d.reports?.length ? await fetchReport(id) : null
+  return toRepairDetail(d, report ? toRepairReport(report) : undefined)
+}
+
+/** 목록 요약 카운트 (화면 상단 카드) */
+function summarize(items: Repair[]): RepairSummaryCounts {
+  const c = (s: Repair['status'][]) => items.filter((r) => s.includes(r.status)).length
+  return {
+    needPhoto: c(['ADDITIONAL_INFO_NEEDED']),
+    technicianReview: c(['DIAGNOSIS_COMPLETED']),
+    reportPending: c(['TECHNICIAN_REVIEW']),
+    completed: c(['CLOSED']),
+    analyzing: c(['RECEIVED', 'QUEUED', 'ANALYZING']),
+    manualReview: c(['MANUAL_REVIEW']),
+  }
+}
+
+/** 시리얼처럼 보이는 검색어만 백엔드 serial 필터로 보낸다 (공백 없음 · 8자 이상 · 숫자 포함) */
+const asSerial = (k: string) => (/^[A-Za-z0-9-]{8,}$/.test(k) && /\d/.test(k) ? k : undefined)
+const PAGE_SIZE = 100
+
+async function realList(q: RepairQuery): Promise<RepairListResponse> {
+  const kw = q.keyword?.trim() ?? ''
+  const serial = asSerial(kw)
+  const status = q.status && q.status !== 'ALL' ? toBeRepairStatus(q.status) : undefined
+  const get = (st?: string) => http.get<BeRepairPage>('/repairs', { params: { page: 0, size: PAGE_SIZE, status: st, serial } }).then((r) => r.data.items.map((x) => toRepair(x)))
+  // 상단 카운트는 상태 필터 없이, 목록은 상태 필터(백엔드)로 조회
+  const [all, byStatus] = await Promise.all([get(), status ? get(status) : Promise.resolve(null)])
+  let items = q.status && q.status !== 'ALL' ? (status ? byStatus! : []) : all
+  if (q.group && (!q.status || q.status === 'ALL')) {
+    const g = STATUS_GROUPS.find((x) => x.key === q.group)
+    if (g) items = items.filter((r) => g.statuses.includes(r.status))
+  }
+  if (q.model) items = items.filter((r) => r.product.model === q.model)
+  // serial 로 보내지 않은 검색어는 받은 목록 안에서 거른다
+  if (kw && !serial) {
+    const k = kw.toLowerCase()
+    const id = /^#(\d+)$/.exec(k)
+    items = id
+      ? items.filter((r) => r.id === Number(id[1]))
+      : items.filter((r) => [r.receiptNo, r.product.serialNumber, r.product.model, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)))
+  }
+  const sort = q.sort ?? 'receivedAt_desc'
+  const RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+  items = [...items].sort((a, b) =>
+    sort === 'urgency' ? RANK[a.urgency] - RANK[b.urgency] || b.receivedAt.localeCompare(a.receivedAt) : sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt),
+  )
+  // 상태별 건수(statusCounts)는 백엔드에 없음 → 빈 객체 = 칩 건수 숨김
+  return { items, total: items.length, counts: summarize(all), statusCounts: {} }
 }
 
 export const repairApi = {
-  /** GET /api/products/{serial} — 시리얼로 제품 정보 자동 조회 */
+  /** GET /api/products?serialNumber= — 시리얼로 제품 정보 자동 조회 */
   async lookupProduct(serial: string): Promise<ProductInfo> {
     if (USE_MOCK) return mockDelay(() => mock.getProduct(serial), 600)
-    return (await http.get<ProductInfo>(`/products/${encodeURIComponent(serial)}`)).data
+    return toProductInfo((await http.get<BeProduct>('/products', { params: { serialNumber: serial } })).data)
   },
 
-  /** GET /api/repairs */
+  /** GET /api/repairs?page&size&status&serial */
   async list(q: RepairQuery = {}): Promise<RepairListResponse> {
     if (USE_MOCK) return mockDelay(() => mock.listRepairs(q))
-    return (await http.get<RepairListResponse>('/repairs', { params: q })).data
+    return realList(q)
   },
 
-  /** GET /api/repairs/{id} */
+  /** GET /api/repairs/{id} (+ 리포트가 있으면 GET /api/repairs/{id}/report) */
   async get(id: number): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.getRepair(id), 250)
-    return (await http.get<Repair>(`/repairs/${id}`)).data
+    return realGet(id)
   },
 
-  /** POST /api/repairs (DRAFT 생성) */
+  /**
+   * 접수 + 사진 + 진단 요청
+   *  Mock: 접수 생성 → 사진 업로드 → 진단 요청 3단계
+   *  실서버: POST /api/repairs multipart 한 번 (data: JSON, files: 사진 1~10장) → 202 {repairId, taskId, status}
+   */
+  async intake(req: CreateRepairRequest, photos: UploadImageRequest[]): Promise<{ repairId: number }> {
+    if (USE_MOCK) {
+      const r = await this.create(req)
+      for (const p of photos) await this.uploadImage(r.id, p)
+      await this.submit(r.id)
+      return { repairId: r.id }
+    }
+    if (!req.product.id) throw new ApiError(400, '제품 정보를 다시 조회해 주세요.', 'INVALID_INPUT')
+    const data = {
+      productId: req.product.id,
+      symptoms: req.symptom,
+      errorCodes: req.errorCodes,
+      firmware: req.product.firmware,
+      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·긴급도·기사 소견 복원에 사용
+      userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind), urgency: req.urgency },
+    }
+    const f = new FormData()
+    f.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+    photos.forEach((p) => f.append('files', p.file))
+    const res = (await http.post<BeAccepted>('/repairs', f)).data
+    return { repairId: Number(res.repairId) }
+  },
+
+  /** [Mock 전용] 접수 생성 (DRAFT) — 실서버는 intake() 한 번으로 처리 */
   async create(req: CreateRepairRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.createRepair(req))
-    return (await http.post<Repair>('/repairs', req)).data
+    throw notSupported('단계별 접수')
   },
 
-  /** POST /api/repairs/{id}/images (multipart) */
+  /** [Mock 전용] 사진 업로드 (접수 사진 · 수리 전·후 사진) */
   async uploadImage(id: number, req: UploadImageRequest): Promise<RepairImage> {
     if (USE_MOCK) return mockDelay(() => mock.uploadImage(id, req), 400)
-    return (await http.post<RepairImage>(`/repairs/${id}/images`, toForm(req))).data
+    throw notSupported('수리 전·후 사진 업로드')
   },
 
-  /** POST /api/repairs/{id}/submit — 접수 확정 + AI 진단 요청 */
+  /** [Mock 전용] 접수 확정 + AI 진단 요청 */
   async submit(id: number): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.submitRepair(id))
-    return (await http.post<Repair>(`/repairs/${id}/submit`)).data
+    throw notSupported('단계별 접수')
   },
 
-  /** GET /api/repairs/{id}/photo-requests */
+  /** 추가 사진 요청 — 실서버는 상세(photoRequests)에서 꺼냄 */
   async photoRequests(id: number): Promise<PhotoRequest[]> {
     if (USE_MOCK) return mockDelay(() => mock.getPhotoRequests(id), 200)
-    return (await http.get<PhotoRequest[]>(`/repairs/${id}/photo-requests`)).data
+    return (await fetchDetail(id)).photoRequests.map(toPhotoRequest)
   },
 
-  /** POST /api/repairs/{id}/additional-images — 추가 사진(0장 이상) + 추가 설명 (multipart: files, note, photoRequestId) */
+  /**
+   * 추가 자료 제출
+   *  실서버: 사진마다 POST /api/repairs/{id}/attachments?requestId= → attachmentId 수집
+   *          → POST /api/repairs/{id}/diagnosis/resume {requestId, submissionKey, attachmentIds, note}
+   *  note 는 백엔드 Resume 스키마에 없어 무시될 수 있다. 실서버는 사진 1장 이상 필요.
+   */
   async uploadAdditional(id: number, req: AdditionalInfoRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.uploadAdditionalImages(id, req), 600)
-    const f = new FormData()
-    req.photos.forEach((r) => f.append('files', r.file))
-    if (req.note?.trim()) f.append('note', req.note.trim())
-    if (req.photoRequestId) f.append('photoRequestId', req.photoRequestId)
-    return (await http.post<Repair>(`/repairs/${id}/additional-images`, f)).data
+    if (!req.photos.length) throw new ApiError(400, '추가 사진을 1장 이상 올려 주세요. (설명만 제출하는 기능은 아직 지원되지 않습니다)', 'INVALID_INPUT')
+    const requestId = req.photoRequestId ?? (await fetchDetail(id, true)).photoRequests.find((p) => p.status === 'OPEN')?.id
+    if (!requestId) throw new ApiError(409, '열려 있는 추가 사진 요청이 없습니다. 화면을 새로고침해 주세요.', 'NOT_FOUND')
+    const attachmentIds: string[] = []
+    for (const p of req.photos) {
+      const f = new FormData()
+      f.append('file', p.file)
+      attachmentIds.push((await http.post<BeUploaded>(`/repairs/${id}/attachments`, f, { params: { requestId } })).data.attachmentId)
+    }
+    await http.post(`/repairs/${id}/diagnosis/resume`, { requestId, submissionKey: crypto.randomUUID(), attachmentIds, note: req.note?.trim() || undefined })
+    return realGet(id, true)
   },
 
-  /** GET /api/repairs/{id}/diagnosis */
+  /** GET /api/repairs/{id}/diagnosis (+ /diagnosis/tools 로 Agent 별 결과) */
   async diagnosis(id: number): Promise<DiagnosisResponse> {
     if (USE_MOCK) return mockDelay(() => mock.getDiagnosis(id))
-    return (await http.get<DiagnosisResponse>(`/repairs/${id}/diagnosis`)).data
+    const [task, tools, parts, detail] = await Promise.all([
+      http
+        .get<BeTask>(`/repairs/${id}/diagnosis`)
+        .then((r) => r.data)
+        .catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))),
+      http
+        .get<BeToolExecution[]>(`/repairs/${id}/diagnosis/tools`)
+        .then((r) => r.data)
+        .catch(() => [] as BeToolExecution[]),
+      partApi.list().catch(() => []),
+      fetchDetail(id),
+    ])
+    if (!task) return { current: null, versions: [] }
+    const repair = toRepair(detail, { task: latestTask(detail.tasks) })
+    // 진단 확인 API 가 없어 접수 상태로 판단: 수리 중(REPAIRING)·종결이면 기사가 진단을 확인한 것으로 본다
+    const confirmed = detail.status === 'REPAIRING' || detail.status === 'CLOSED'
+    const d = toDiagnosis(task, { parts, tools, urgency: repair.urgency, decision: { state: confirmed ? 'APPROVED' : 'PENDING' } })
+    return { current: d, versions: d ? [d] : [] }
   },
 
-  /** POST /api/repairs/{id}/approval */
+  /** [Mock 전용] 진단 확인·반려·본사 검토 요청·수동 진단 회신 */
   async approval(id: number, req: ApprovalRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.approval(id, req), 500)
-    return (await http.post<Repair>(`/repairs/${id}/approval`, req)).data
+    throw notSupported('진단 확인·반려·본사 검토 처리')
   },
 
-  /** POST /api/repairs/{id}/reanalysis */
+  /** [Mock 전용] 추가 분석(재진단) 요청 */
   async reanalysis(id: number, req: ReanalysisRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.reanalysis(id, req), 500)
-    return (await http.post<Repair>(`/repairs/${id}/reanalysis`, req)).data
+    throw notSupported('추가 분석(재진단) 요청')
   },
 
-  /** PUT /api/repairs/{id}/report — 리포트 초안 저장 (version 불일치 시 409 REPORT_VERSION) */
+  /** PUT /api/repairs/{id}/report/draft {version, content} — 처음이면 version 0. 불일치 409 REPORT_VERSION */
   async saveReportDraft(id: number, req: SaveReportDraftRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.saveReportDraft(id, req), 400)
-    return (await http.put<Repair>(`/repairs/${id}/report`, req)).data
+    await http.put(`/repairs/${id}/report/draft`, { version: req.version ?? 0, content: toBeContent(req.content) })
+    return realGet(id, true)
   },
 
-  /** POST /api/repairs/{id}/report/confirm — 리포트 확정 → 고장 DB·대시보드 반영, 상태 CLOSED */
+  /** POST /api/reports/{reportId}/confirm {version, revision} — 리포트 id·최신 revision 은 GET /report 로 확인 */
   async confirmReport(id: number, req: ConfirmReportRequest): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.confirmReport(id, req), 500)
-    return (await http.post<Repair>(`/repairs/${id}/report/confirm`, req)).data
+    const rep = await fetchReport(id)
+    if (!rep) throw new ApiError(409, '저장된 리포트 초안이 없습니다.', 'NOT_FOUND')
+    await http.post(`/reports/${rep.id}/confirm`, { version: req.version, revision: rep.latest_revision })
+    return realGet(id, true)
   },
 }

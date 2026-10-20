@@ -12,6 +12,7 @@ import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import { useRepairPage } from '@/composables/useRepairPage'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
+import { FEATURES } from '@/api/features'
 import { PHOTO_KIND_LABEL } from '@/constants/status'
 import type { ApprovalAction } from '@/types/approval'
 
@@ -91,8 +92,8 @@ async function onAction(key: string, comment: string) {
         :sources="diagnosis?.sources ?? []"
         :decision="{ state: 'PENDING' }"
         :actions="MANUAL_ACTIONS"
-        :can-decide="isManual"
-        disabled-reason="수동 검토 상태가 아니거나 이미 회신한 건입니다."
+        :can-decide="isManual && FEATURES.diagnosisDecision"
+        :disabled-reason="FEATURES.diagnosisDecision ? '수동 검토 상태가 아니거나 이미 회신한 건입니다.' : '수동 진단 회신은 아직 백엔드에서 지원하지 않습니다.'"
         :busy="submitting"
         comment-label="수동 진단 내용 (기사에게 전달)"
         comment-placeholder="예) 모터 하단 연결부 균열 확인됨. 모터 어셈블리(RM-MT-103) 교체 후 리포트 작성 바랍니다."

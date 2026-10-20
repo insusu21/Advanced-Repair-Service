@@ -35,6 +35,7 @@ export const STATUS_META: Record<RepairStatus, StatusMeta> = {
   APPROVED: { label: '승인 완료', description: '고장 DB·대시보드 반영됨', tone: 'success', icon: CircleCheck },
   REJECTED: { label: '반려', description: '반려되어 반영되지 않음', tone: 'danger', icon: CircleX },
   MANUAL_REVIEW: { label: '본사 수동 검토', description: '사람이 직접 진단하는 건', tone: 'danger', icon: Hand },
+  CANCELLED: { label: '취소', description: '접수가 취소됨', tone: 'neutral', icon: CircleX },
   CLOSED: { label: '리포트 확정', description: '기사가 리포트를 확정해 고장 DB·대시보드에 반영됨', tone: 'success', icon: Archive },
 }
 
@@ -50,6 +51,7 @@ export const STATUS_ORDER: RepairStatus[] = [
   'REJECTED',
   'MANUAL_REVIEW',
   'CLOSED',
+  'CANCELLED',
 ]
 
 /** 수리 목록 상태 필터의 그룹 (표시 순서용). 개별 상태는 모두 그대로 노출한다 */
@@ -57,7 +59,7 @@ export const STATUS_GROUPS: { key: StatusGroupKey; label: string; statuses: Repa
   { key: 'AI_ANALYSIS', label: 'AI 분석', statuses: ['RECEIVED', 'QUEUED', 'ANALYZING'] },
   { key: 'TECHNICIAN', label: '기사 처리', statuses: ['ADDITIONAL_INFO_NEEDED', 'DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'REJECTED'] },
   { key: 'HQ', label: '본사 검토', statuses: ['MANUAL_REVIEW'] },
-  { key: 'DONE', label: '완료', statuses: ['APPROVED', 'CLOSED'] },
+  { key: 'DONE', label: '완료', statuses: ['APPROVED', 'CLOSED', 'CANCELLED'] },
 ]
 
 /** 진단 진행 화면에서 "분석 중" 으로 다루는 상태 */
@@ -98,7 +100,10 @@ export const ORDER_STATUS_META: Record<OrderStatus, { label: string; tone: Tone 
   AI_DRAFT: { label: 'AI 발주안 (미요청)', tone: 'ai' },
   REQUESTED: { label: '발주 요청됨 · 승인 대기', tone: 'warning' },
   APPROVED: { label: '발주 승인', tone: 'success' },
+  ORDERED: { label: '출고됨', tone: 'info' },
+  RECEIVED: { label: '수령 완료', tone: 'success' },
   REJECTED: { label: '발주 반려', tone: 'danger' },
+  CANCELLED: { label: '발주 취소', tone: 'neutral' },
 }
 
 export const DECISION_META: Record<DecisionState, { label: string; tone: Tone }> = {
