@@ -6,8 +6,9 @@ BASE = os.environ.get("SPRING_URL", "http://localhost:8080")
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 and __name__ == "__main__" else "complete"
 # complete: 결함이 보이는 사진 2장 → 바로 진단 완료
 # photo:    결함이 안 보이는 기계 사진 1장 → 추가 사진 요청 → auto_photo.py가 지정 사진 제출 → 재개 → 완료
-PHOTOS = {"complete": [("PCB", Path(__file__).parent / "designated/pcb_sample.jpg"), ("MOTOR", Path(__file__).parent / "designated/mech_sample.jpg")],
-          "photo": [("MOTOR", Path(__file__).parent / "designated/motor_no_defect.jpg")]}[SCENARIO]
+SOURCE = Path(__file__).parent.parent / "source"  # [통합] 제출용 정리: 사진을 source/로 옮김
+PHOTOS = {"complete": [("PCB", SOURCE / "01_pcb.jpg"), ("MOTOR", SOURCE / "09_mech_extra.jpg")],
+          "photo": [("MOTOR", SOURCE / "32_mech_photo_request.jpg")]}[SCENARIO]
 
 
 class Client:
