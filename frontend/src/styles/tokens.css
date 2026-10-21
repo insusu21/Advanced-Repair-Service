@@ -1,0 +1,68 @@
+/* =========================================================================
+ * 디자인 토큰
+ * - 주색: 진한 남색 / 정상: 초록 / 대기: 주황 / 실패·반려: 빨강
+ * - AI 결과: 보라 계열 + 점선 테두리 + "AI 초안" 라벨
+ * - 사람 확정: 초록 실선 테두리 + "사람 확정" 라벨
+ * - 고령 사용자 고려: 기본 17px, 버튼 최소 48px
+ * ========================================================================= */
+:root {
+  --font: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --fs-xs: 0.8125rem; /* 13.8 */
+  --fs-sm: 0.9375rem; /* 15.9 */
+  --fs-md: 1rem; /* 17 */
+  --fs-lg: 1.1765rem; /* 20 */
+  --fs-xl: 1.4118rem; /* 24 */
+  --fs-2xl: 1.8824rem; /* 32 */
+
+  --navy-900: #0f1d42;
+  --navy-800: #16285a;
+  --navy-700: #1f3672;
+  --navy-600: #2c4a92;
+  --navy-100: #e6ebf6;
+  --navy-50: #f2f5fb;
+
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --border: #dde2ea;
+  --border-strong: #c3cad6;
+  --text: #1a2233;
+  --text-2: #4a5568;
+  --text-3: #6b7587;
+
+  --success: #187a43;
+  --success-bg: #e7f5ec;
+  --success-border: #9fd6b4;
+  --warning: #b35a00;
+  --warning-bg: #fff3e3;
+  --warning-border: #f6c27f;
+  --danger: #c42b2b;
+  --danger-bg: #fdecec;
+  --danger-border: #f1a7a7;
+  --info: #1f5fbf;
+  --info-bg: #e8f0fc;
+  --info-border: #a9c4ef;
+  --neutral: #4a5568;
+  --neutral-bg: #eef0f4;
+  --neutral-border: #cdd3dd;
+
+  --ai: #5b3fd6;
+  --ai-bg: #f2effe;
+  --ai-border: #b9abf3;
+  --human: #187a43;
+  --human-bg: #eaf7ef;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(15, 29, 66, 0.06);
+  --shadow: 0 1px 3px rgba(15, 29, 66, 0.08), 0 4px 14px rgba(15, 29, 66, 0.05);
+  --shadow-lg: 0 12px 40px rgba(15, 29, 66, 0.18);
+
+  --sidebar-w: 248px;
+  --topbar-h: 68px;
+  --tap: 48px;
+  --focus: 0 0 0 3px rgba(44, 74, 146, 0.35);
+}

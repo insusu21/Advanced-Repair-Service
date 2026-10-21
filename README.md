@@ -1,119 +1,95 @@
-# skeleton-agent
+# 로봇청소기 고장 진단·수리 지원 AI Agent (SKALA 6팀 통합본)
 
-로봇청소기 고장 진단 **LangGraph 에이전트 뼈대**.
-Spring이 Kafka로 보낸 진단 명령을 받아 → 사진 분류(GPT) → 증상 분리(GPT) → MCP 병렬 호출 → 판단 → 리포트(GPT)를 만들어 Kafka로 돌려준다.
+기사 접수(사진) → Spring → Kafka → LangGraph 에이전트(PCB·기계·RAG MCP + GPT) → Spring → 프론트 진단 화면 → 진단 확인 → 수리 리포트 → 종결까지 돈다.
+팀원 코드를 합치면서 고친 것: **[개조내역.md](개조내역.md)**
 
-`.env`에 OpenAI 키만 넣으면 이 레포 하나로 바로 돈다 (Kafka, MCP 서버 2개, 예시 사진, PCB 모델 가중치 포함).
+## 구성
+| 폴더 | 내용 | 포트 |
+|---|---|---|
+| `backend/` | Spring Boot (Java 21) + Postgres 17 + Kafka (`backend/compose.yaml`) | 8080 / 5432 / 9092 |
+| `frontend/` | Vue 3 + Vite | 5173 |
+| `worker/` | LangGraph 에이전트 워커 | — |
+| `mcp_servers/mechanical` | 기계(모터) 결함 검출 MCP | 9104 |
+| `mcp_servers/pcb` | PCB 결함 검출 MCP (워커가 stdio로 실행) | — |
+| `Rag_mcp/` | 관찰 정규화·PCB 해석·손상 해석·RAG 검색 MCP 4개 | 8011~8014 |
+| `integration/` | 시연 스크립트, 사진 요청 대역, 시연 사진 | — |
 
-## 실행
-
-자세한 순서와 안 될 때 해결법: [코드돌리는 법.md](코드돌리는%20법.md)
-
-준비물: Docker, [uv](https://docs.astral.sh/uv/)
-
+## 준비 (처음 한 번)
+필요: Docker Desktop, JDK 21, uv, Node 20+
 ```bash
-./setup.sh                      # 처음 한 번: 파이썬 환경 3개 설치 + .env 만들기
-# .env 열어서 OPENAI_API_KEY= 뒤에 키 넣기 (없으면 GPT 대신 단어 규칙으로 돈다)
-
-docker compose up -d            # Kafka (localhost:9092)
+./setup.sh
 ```
+- `.env`: `OPENAI_API_KEY` 입력
+- `backend/.env`: `DB_PASSWORD`, `INTERNAL_SERVICE_TOKEN`(32자 이상), `DEV_PASSWORD`(12자 이상) 입력
+- RAG 인덱스: `cd Rag_mcp && uv run --env-file ../.env repair-mcp index`
 
-터미널 3개:
+## 실행 (터미널 7개, 모두 레포 루트에서 시작)
 ```bash
-# 1. 기계 MCP 서버 (처음엔 Hugging Face에서 모델을 받아 조금 걸림)
+# 1. DB·Kafka
+cd backend && set -a && . ./.env && set +a && docker compose up -d --wait
+
+# 2. Spring (dev, 가짜 AI 끔)
+cd backend && set -a && . ./.env && set +a && ./gradlew bootRun --args='--app.mock-ai.enabled=false'
+
+# 3. 기계 MCP
 cd mcp_servers/mechanical && uv run python server.py
 
-# 2. 에이전트 워커
-uv run python -m worker.main     # "대기 중 ... (GPT 켜짐)" 나오면 준비 끝
+# 4. Rag_mcp 4개
+cd Rag_mcp && for s in observation:8011 pcb:8012 damage:8013 rag:8014; do \
+  uv run --env-file ../.env repair-mcp serve ${s%%:*} --transport http --port ${s##*:} & done; wait
 
-# 3. 시험: Spring인 척 명령 1개 보내고 결과를 계약(JSON Schema)으로 검사
-uv run python -m worker.send_test
+# 5. 에이전트 워커 (DEMO_FORCE_PHOTO=1: 첫 진단은 무조건 추가 사진 요청, 시연용)
+set -a && . backend/.env && set +a && DEMO_FORCE_PHOTO=1 env -u OPENAI_API_KEY uv run --env-file .env python -m worker.main
+
+# 6. 프론트 → 브라우저 http://localhost:5173
+cd frontend && VITE_USE_MOCK=false VITE_API_BASE_URL= VITE_API_PROXY_TARGET=http://localhost:8080 npx vite --port 5173
+
+# 7. 사진 요청 대역 (요청 후 60초 동안 아무도 안 올리면 지정 사진 제출)
+cd integration && python3 auto_photo.py
 ```
 
-결과:
-- 터미널 3: 진행 이벤트 #1~#8 + 최종 리포트 JSON + `계약 검사 통과`
-- 리포트 파일: `worker/reports/task-900_고장리포트.md` (VS Code에서 `Cmd+Shift+V`로 사진까지 보기)
-
-## 폴더
-
+## 로그인
+계정 `tech1`, `tech2`(기사), `quality`(본사). 비밀번호는 처음엔 `DEV_PASSWORD`다. `1234`로 바꾸려면 Spring을 한 번 띄운 뒤:
+```bash
+cd backend && docker compose exec postgres psql -U repair -d repair -c \
+ "CREATE EXTENSION IF NOT EXISTS pgcrypto; UPDATE app_user SET password_hash=crypt('1234', gen_salt('bf',12)) WHERE email IN ('tech1','tech2','quality')"
 ```
-skeleton-agent/
-├── worker/                 에이전트 (읽는 순서: main → graph → tools)
-│   ├── main.py             Kafka 입구·출구. 명령 받기 → 그래프 → 결과 보내기 → commit
-│   ├── graph.py            진단 흐름 (LangGraph 노드·연결)
-│   ├── tools.py            팔다리: 사진 받기, MCP 호출, GPT 호출
-│   ├── report.py           결과를 고장리포트.md로 저장
-│   ├── config.py           주소·토픽·횟수 설정, .env 읽기
-│   ├── send_test.py        Spring 없이 시험
-│   ├── samples/            Spring에서 사진을 못 받으면 쓰는 예시 2장 (PCB 1, 기계 1)
-│   └── (리포트는 reports/ 에 생김)
-├── mcp_servers/
-│   ├── pcb/                PCB 결함 MCP (YOLO, stdio). 워커가 부를 때마다 실행
-│   └── mechanical/         금속 표면 결함 MCP (YOLO, HTTP 9104). 미리 켜 둔다
-├── contract/               Spring 팀과의 Kafka 계약 (backend 레포에서 복사)
-├── integration/            백엔드·에이전트·프론트 통합 기록 (실행법, 변경메모, 패치, 시연 사진)
-├── tests/                  판단 규칙 테스트 (uv run pytest)
-├── docker-compose.yml      Kafka
-├── setup.sh
-└── .env.example
+`integration/demo.py`, `auto_photo.py`는 `LOGIN_PASSWORD`(기본 `1234`)로 로그인한다.
+
+## 시연
+- 접수 화면 예시 시리얼 `RC2026000187` 조회 → 사진 첨부(`integration/시연사진/`) → 접수
+- 진행 화면 → 추가 사진 요청 → 사진 제출(또는 대역) → 진단 결과 → 진단 확인 → 리포트 저장·확정 → 종결
+- 화면 없이 API로 시험: `python3 integration/demo.py complete` 또는 `photo`
+- 사진 파일 이름에 실제 검출 결과가 있다. `결함없음_사진요청용` 사진은 추가 사진 요청 흐름용이다.
+
+## 시험
+```bash
+uv run pytest          # 에이전트
+cd backend && ./gradlew test
 ```
 
-## 흐름
+## 시연 사진 출처
+01~04는 팀 시험 사진. 05~24는 위키미디어 공용 사진(900px 축소본)이며 원본·작성자·라이선스는 아래와 같다.
 
-```
-Kafka diagnosis.commands.v2  (Spring → 우리)
-  → classify_photos   사진 받기(실패 시 예시 2장) + GPT로 PCB / MECH / OTHER 분류
-  → split_text        GPT로 증상을 PCB / 기계 / SW 단서로 나눔
-  → pcb_mcp / mech_mcp   필요한 것만 동시에
-  → rag_mcp           증상 + PCB 라벨로 과거 사례 검색
-  → judge             결함 찾음 → report
-                      못 찾음 → request_photo (최대 3회)
-                      3회 넘음 → fail
-Kafka diagnosis.events.v2    (우리 → Spring)  +  worker/reports/*.md
-```
-
-| MCP | 상태 |
-|---|---|
-| pcb (`mcp_servers/pcb`) | 실제. 팀원 pcb_agent 서버 그대로. 결함 6종 |
-| mechanical (`mcp_servers/mechanical`, 9104) | 실제. 도구 2개: `detect_surface_defects`(강판 결함 모델) + `detect_dents`(찌그러짐·파손) |
-| rag ([Rag_mcp 레포](https://github.com/skala-ai-agent-team6/Rag_mcp), 8014) | 실제. 증상 글 + PCB 라벨로 과거 수리 사례·라벨 정의 검색. 꺼져 있으면 검색 없이 진행. 찌그러짐 라벨은 보내지 않음 |
-
-사진 종류는 워커 안에서 `PCB / MECH / OTHER`로 부르고, Spring에 보낼 때는 DB 기준 `PCB / MOTOR`로 바꾼다(`graph.py` `mech_mcp`).
-
-주의: 기계 모델 두 개 모두 로봇청소기 사진으로 학습한 모델이 아니다.
-- `detect_surface_defects`: NEU 강판 흑백 클로즈업 모델. 일반 사진은 정확도가 낮다.
-- `detect_dents`: 자동차 외판 모델(`vineetsarpal/yolov11n-car-damage`). 결과 이름은 `dent` / `breakage`로 바꿔 내보내고, 원래 자동차 부위명은 `raw_label`에 같이 담는다. 자동차가 아닌 사진 30장 중 20장에서 결함을 냈다(오탐 많음). 모델을 바꿀 땐 `DENT_REPO`, `DENT_FILE`만 바꾼다.
-
-## Spring과 붙일 때
-
-- `.env`에 `INTERNAL_SERVICE_TOKEN`, `SPRING_BASE_URL` 넣기 (사진 다운로드용)
-- backend는 `--app.mock-ai.enabled=false`로 켠다 (안 끄면 Spring의 가짜 AI도 같이 답함)
-- 이 레포의 Kafka 대신 backend의 `docker compose up`을 써도 된다 (같은 9092 포트라 둘 중 하나만 켠다)
-
-## 남은 일
-
-| 담당 | 할 일 | 위치 |
-|---|---|---|
-| 오케스트레이션 | 판단을 GPT로, 다시 찍을 부위·설명을 GPT로 | `graph.py` `decide`, `request_photo` |
-| PCB | stdio → HTTP 서버로 (속도) | `tools.py` `call_pcb_mcp` |
-| 하네스 | 처리 기록을 DB로, 재시도 중복 이벤트 정리 | `main.py` `done`, `handle` |
-| 오케스트레이션 + Spring | 추천 부품 partId | `graph.py` `report` |
-| 전체 | 예시 사진 대체를 운영에서 끄기 | `tools.py` `load_photos` |
-| 기계 MCP | 찌그러짐 모델 교체 (GPT 비전 또는 PatchCore 후보) | `mcp_servers/mechanical/server.py` |
-| 오케스트레이션 | 사진을 항상 `image/jpeg`로 보냄 → 실제 형식으로 | `tools.py` `classify_photo` |
-| 하네스 | 마지막 실패 뒤에도 재시도 대기(4초)를 함 | `main.py` `handle` |
-| 프론트 + Spring | `user_input`에 넣을 이름 합의 (지금은 customerDescription) | `graph.py` `split_text` |
-
-## 참고
-
-- 같은 그룹 이름으로 워커를 두 개 켜면 명령을 나눠 갖는다. 시험할 땐 하나만 켠다.
-- 새 그룹으로 처음 켜면 Kafka에 쌓인 예전 명령부터 처리한다.
-- 박스 그린 사진은 각 MCP 폴더의 `results/`에 저장된다 (git 제외).
-
-## 통합 버전 (백엔드·에이전트·프론트)
-| 문서 | 내용 |
-|---|---|
-| `integration/README.md` | 통합 실행법. 통합 전용 Postgres 5434, Kafka 9096을 쓴다 |
-| `integration/수정·삭제_요약.md` | 고치거나 잘라낸 것 한 줄 요약 |
-| `integration/변경메모.md` | 팀원 코드 수정 내역과 이유 |
-| `integration/patches/` | 각 레포 패치 (팀 레포 main에는 아직 안 들어감) |
+| 번호 | 원본 | 작성자 | 라이선스 |
+|---|---|---|---|
+| 05 | [Roomba 805 underside](https://commons.wikimedia.org/wiki/File:Roomba_805_underside.jpg) | Piperpet | CC BY-SA 4.0 |
+| 06 | [Roomba e6 underside](https://commons.wikimedia.org/wiki/File:Roomba_e6_underside.jpg) | Piperpet | CC BY-SA 4.0 |
+| 07 | [Roomba 595](https://commons.wikimedia.org/wiki/File:Roomba_595.jpg) | Roomba collector12 | CC BY-SA 4.0 |
+| 08 | [Roomba wheelencoder](https://commons.wikimedia.org/wiki/File:Roomba_wheelencoder.jpg) | Adam Mayer | CC BY-SA 2.0 |
+| 09 | [Roomba wheelencoder 2](https://commons.wikimedia.org/wiki/File:Roomba_wheelencoder_2.jpg) | Adam Mayer | CC BY-SA 2.0 |
+| 10 | [Electric motor brushes vacuum](https://commons.wikimedia.org/wiki/File:Electric_motor_brushes_vacuum.jpg) | Dvortygirl | CC BY-SA 3.0 |
+| 11 | [Vacuum cleaner electric motor](https://commons.wikimedia.org/wiki/File:Vacuum_cleaner_electric_motor.jpg) | Dvortygirl | CC BY-SA 3.0 |
+| 12 | [Staubsaugermotor](https://commons.wikimedia.org/wiki/File:Staubsaugermotor.jpg) | Julian Breuer (Mettness) | CC BY-SA 3.0 |
+| 13 | [From vacuum cleaner motor](https://commons.wikimedia.org/wiki/File:From_vacuum_cleaner_motor_(50293813212).jpg) | Daniel Garcia | CC BY-SA 2.0 |
+| 14 | [Universal motor commutator](https://commons.wikimedia.org/wiki/File:Universal_motor_commutator.jpg) | Ulfbastel (derived work) | Public domain |
+| 15 | [Universalmotor 3](https://commons.wikimedia.org/wiki/File:Universalmotor_3.JPG) | Marrrci | CC BY-SA 3.0 |
+| 16 | [Quadshot drone brushless motors](https://commons.wikimedia.org/wiki/File:Quadshot_drone_brushless_motors_(8107827099).jpg) | Ed Schipul | CC BY 2.0 |
+| 17 | [Burnt terminals](https://commons.wikimedia.org/wiki/File:Burnt_terminals.JPG) | Dmitry G | Public domain |
+| 18 | [LG RoboKing VR5900-series control board](https://commons.wikimedia.org/wiki/File:LG_RoboKing_VR5900-series_control_board.jpg) | ChrisMoran64 | CC BY-SA 4.0 |
+| 19 | [Corroded contact pads on a HDD controller PCB](https://commons.wikimedia.org/wiki/File:Corroded_contact_pads_on_a_HDD_controller_PCB_IMG_2283.JPG) | Hans Haase | CC BY-SA 4.0 |
+| 20 | [Polysix Battery corroded KLM367A board](https://commons.wikimedia.org/wiki/File:Polysix_Battery_corroded_KLM367A_board_n.jpg) | Untergeek | CC BY-SA 4.0 |
+| 21 | [Burnt tantalum capacitor](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(23432017144).jpg) | htomari | CC BY-SA 2.0 |
+| 22 | [Burnt tantalum capacitor (2)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(2)_(23764576950).jpg) | htomari | CC BY-SA 2.0 |
+| 23 | [Burnt tantalum capacitor (3)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(3)_(23432016184).jpg) | htomari | CC BY-SA 2.0 |
+| 24 | [OpenRov Circuits électroniques](https://commons.wikimedia.org/wiki/File:OpenRovProjetCh%27tiPlouf2017Circuits_%C3%A9lectroniques.jpg) | Lamiot | CC BY-SA 4.0 |

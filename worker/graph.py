@@ -7,6 +7,7 @@
 Spring에 진행 상황을 알릴 땐 emit(config, 이벤트종류, 내용)을 부른다.
 """
 
+import os
 import operator
 from typing import Annotated, TypedDict
 
@@ -14,6 +15,10 @@ from langgraph.graph import END, START, StateGraph
 
 from . import config as C
 from . import tools
+from . import enrichment
+from .harness import LimitExceeded, observed
+from .tool_policy import (RequiredToolFailure, check_image_result, check_object,
+                          failure_output, limitation_note)
 
 
 class State(TypedDict, total=False):
@@ -35,9 +40,12 @@ async def emit(config, event_type: str, payload: dict):
 
 async def classify_photos(state: State, config) -> dict:
     await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "CLASSIFYING_PHOTOS"})
-    photos = tools.load_photos(state["command"])  # Spring에서 받거나, 못 받으면 예시 2장
+    photos = await tools.load_photos(state["command"])
     for p in photos:
-        p["kind"] = await tools.classify_photo(p["path"])
+        # 이미 구분해 접수한 사진은 그 구분을 사용. GENERAL/미지정은 원본 GPT 분류 유지.
+        p["kind"] = {"PCB": "PCB", "MOTOR": "MECH", "MECHANICAL": "MECH"}.get(p.get("target"))
+        if p["kind"] is None:
+            p["kind"] = await tools.classify_photo(p["path"])
     return {"photos": photos}
 
 
@@ -50,7 +58,23 @@ async def split_text(state: State, config) -> dict:
     text = f"{repair.get('symptom') or ''} {repair.get('user_input', {}).get('customerDescription', '')}".strip()
     clues = (await tools.split_text(text)).model_dump()
     clues["errorCodes"] = repair.get("error_codes") or []
-    return {"text": text, "clues": clues}
+    observation = await supplemental(config, "normalize_observation", "observation-mcp",
+                                     lambda: enrichment.normalize_observation(text))
+    return {"text": text, "clues": clues, "findings": [observation]}
+
+
+async def supplemental(config, name, server, call):
+    """추가 해석은 근거만 보강한다. 성공/실패로 원본의 found 판단을 바꾸지 않는다."""
+    try:
+        out = check_object(await call(), name)
+    except LimitExceeded:
+        raise
+    except Exception as exc:
+        out = failure_output(name, exc, required=False)
+    await emit(config, "TOOL_EXECUTED", {"tool": name, "toolVersion": "1", "agentType": "RAG",
+                                        "mcpServer": server, "input": {}, "output": out})
+    return {"source": "INTERPRETATION", "attachmentId": None, "found": False,
+            "output": {"tool": name, **out}}
 
 
 # ── 3. MCP 고르기 + 호출 (동시에) ────────────────────────
@@ -72,33 +96,58 @@ async def run_photo_mcp(state, config, kind: str, call, tool: str, agent_type: s
     findings = []
     for p in [p for p in state["photos"] if p["kind"] == kind]:
         try:
-            out = await call(p["path"])
-        except Exception as e:  # MCP 꺼짐 등. 멈추지 않고 '못 찾음'으로 넘긴다
-            out = {"error": str(e)[:200]}
+            out = check_image_result(await call(p["path"]), tool)
+        except LimitExceeded:
+            raise
+        except Exception as e:
+            # 선택된 이미지 분석은 필수. 서버 장애를 '검출 없음'으로 넘기지 않는다.
+            out = failure_output(tool, e, required=True)
+            await emit(config, "TOOL_EXECUTED", {"tool": out["tool"], "toolVersion": "1",
+                       "agentType": agent_type, "mcpServer": server,
+                       "input": {"path": p["path"]}, "output": out})
+            raise RequiredToolFailure(out["tool"], out["error"]) from e
         await emit(config, "TOOL_EXECUTED", {"tool": tool, "toolVersion": "1", "agentType": agent_type,
                                              "mcpServer": server, "input": {"path": p["path"]}, "output": out})
         findings.append({"source": kind, "attachmentId": p["attachmentId"], "found": bool(out.get("is_defective")), "output": out})
+    if kind == "PCB":
+        labels = sorted({d["type"] for f in findings for d in f["output"].get("defects", [])})
+        if labels:
+            findings.append(await supplemental(config, "interpret_pcb", "pcb-mcp",
+                                                lambda: enrichment.interpret_pcb(labels)))
+    else:
+        # 일반 결함명은 유지하고, 모델이 반환한 원래 부위 라벨로 추가 해석한다.
+        labels = [label for f in findings for label in enrichment.dent_labels(f["output"])]
+        labels = [{"damage_type": kind, "part": part}
+                  for kind, part in dict.fromkeys((v["damage_type"], v["part"]) for v in labels)]
+        if labels:
+            findings.append(await supplemental(config, "interpret_damage", "damage-mcp",
+                                                lambda: enrichment.interpret_damage(labels)))
     return {"findings": findings}
 
 
 async def pcb_mcp(state: State, config) -> dict:
+    await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "PCB_ANALYSIS"})  # [통합] 프론트 진행 화면 단계 이름
     return await run_photo_mcp(state, config, "PCB", tools.call_pcb_mcp, "analyze_pcb_image", "PCB", "pcb-detector")
 
 
 async def mech_mcp(state: State, config) -> dict:
+    await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "MOTOR_ANALYSIS"})  # [통합] 프론트 진행 화면 단계 이름
     return await run_photo_mcp(state, config, "MECH", tools.call_mech_mcp, "detect_surface_defects", "MOTOR", "mechanical-mcp")
 
 
 async def rag_mcp(state: State, config) -> dict:
     """사진 MCP가 끝난 뒤 실행: 증상 글 + PCB가 찾은 라벨로 과거 사례 검색."""
+    await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "SIMILAR_CASE_SEARCH"})  # [통합] 프론트 진행 화면 단계 이름
     codes = state["clues"]["errorCodes"]
     text = state["text"] + (f" 에러코드 {', '.join(codes)}" if codes else "")
     pcb_labels = sorted({d["type"] for f in state.get("findings", []) if f["source"] == "PCB"
                          for d in f["output"].get("defects", [])})
     try:
-        out = await tools.call_rag_mcp(text, pcb_labels)
-    except Exception as e:  # RAG 서버 꺼짐 등. 검색 없이 진행
-        out = {"hits": [], "error": str(e)[:200]}
+        out = check_object(await tools.call_rag_mcp(text, pcb_labels), "retrieve_repair_context")
+    except LimitExceeded:
+        raise
+    except Exception as e:  # 보조 검색 실패는 기록하고 리포트에도 누락을 명시한다.
+        out = {"hits": [], **failure_output("retrieve_repair_context", e, required=False)}
     await emit(config, "TOOL_EXECUTED", {"tool": "retrieve_repair_context", "toolVersion": "1", "agentType": "RAG",
                                          "mcpServer": "rag-mcp", "input": {"text": text, "pcbLabels": pcb_labels}, "output": out})
     return {"findings": [{"source": "RAG", "attachmentId": None, "found": False, "output": out}]}
@@ -118,15 +167,22 @@ def decide(findings: list[dict], photo_round: int) -> str:
 
 async def judge(state: State, config) -> dict:
     await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "JUDGING"})
-    return {"decision": decide(state["findings"], state["command"]["payload"]["round"])}
+    photo_round = state["command"]["payload"]["round"]
+    # [통합·시연용] DEMO_FORCE_PHOTO=1이면 첫 진단은 무조건 추가 사진 요청. 기계 모델이 거의 항상 뭔가를 검출해서 요청 흐름이 안 보였다
+    if os.getenv("DEMO_FORCE_PHOTO") == "1" and photo_round == 0:
+        return {"decision": "PHOTO"}
+    return {"decision": decide(state["findings"], photo_round)}
 
 
 # ── 5. 끝: 리포트 / 사진 요청 / 실패 ─────────────────────
 
 
 async def report(state: State, config) -> dict:
-    r = await tools.write_report(state["text"], state["findings"])  # GPT는 글만 쓴다
-    candidates = [{"rank": i + 1, **c.model_dump()} for i, c in enumerate(r.candidates)]
+    parts = state["command"]["payload"]["repair"].get("product_snapshot", {}).get("compatibleParts", [])
+    r = await tools.write_report(state["text"], state["findings"], parts)
+    # [통합] 점수 높은 순으로 순위를 다시 매긴다. GPT가 준 순서 그대로면 0.79가 1순위, 0.95가 2순위가 되기도 했다
+    ranked = sorted((c.model_dump() for c in r.candidates), key=lambda c: -c["confidence"])
+    candidates = [{"rank": i + 1, **c} for i, c in enumerate(ranked)]
     evidence = []  # 근거는 코드가 MCP 결과에서 직접 만든다 (GPT가 사진 번호를 지어내지 않게)
     for f in state["findings"]:
         if f["found"]:
@@ -137,18 +193,55 @@ async def report(state: State, config) -> dict:
                 e["attachmentId"] = f["attachmentId"]
             evidence.append(e)
         if f["source"] == "RAG":
-            evidence += [{"type": "MANUAL" if h["kind"] == "LABEL" else "CASE",
+            evidence += [{"type": "MANUAL" if h["kind"] in ("LABEL", "REFERENCE") else "CASE",
                           **{k: v for k, v in h.items() if k != "kind"}} for h in f["output"]["hits"]]
     payload = {"summary": r.summary, "modelVersion": C.MODEL_VERSION, "repairMethod": r.repairMethod,
-               "candidates": candidates, "recommendedParts": [], "evidence": evidence}
-    # TODO: recommendedParts는 Spring DB에 있는 partId만 가능 → product_snapshot의 부품 목록에서 고른다
+               "candidates": candidates, "recommendedParts": [p.model_dump() for p in r.recommendedParts],
+               "evidence": evidence, **(await screen_fields(state, candidates))}
+    note = limitation_note(state["findings"])
+    if note:
+        payload["summary"] += "\n\n" + note  # LLM이 누락해도 최종 JSON·리포트에 반드시 남긴다.
     return {"result": {"eventType": "DIAGNOSIS_COMPLETED", "payload": payload}}
+
+
+async def screen_fields(state, candidates) -> dict:
+    """[통합] 프론트 진단 화면용 추가 필드 (기존 필드는 그대로).
+    agents: 사진 위 박스. 프론트는 이미지 대비 0~1 좌표를 쓰는데 MCP는 픽셀 좌표라 사진 크기로 나눈다.
+    similarCases: RAG 사례. 원래 evidence 안에만 있어 화면 '유사 사례' 칸이 비었다."""
+    from PIL import Image
+    paths = {p["attachmentId"]: p["path"] for p in state.get("photos", [])}
+    agents = []
+    for f in state["findings"]:
+        if f["source"] not in ("PCB", "MECH") or not f["attachmentId"]:
+            continue
+        try:
+            w, h = Image.open(paths[f["attachmentId"]]).size
+        except (KeyError, OSError):  # 사진 파일이 없으면(테스트 대역 등) 박스 없이 넘긴다
+            continue
+        defects = f["output"].get("defects", [])
+        agents.append({"agent": "PCB" if f["source"] == "PCB" else "MOTOR", "verdict": "ABNORMAL" if f["found"] else "NORMAL",
+                       "summary": ", ".join(sorted({d["type"] for d in defects})) or "검출 없음",
+                       "findings": [f"{d['type']} {d['confidence']:.2f}" for d in defects],
+                       "confidence": max((d["confidence"] for d in defects), default=0), "attachmentIds": [f["attachmentId"]],
+                       "annotations": [{"attachmentId": f["attachmentId"], "label": d["type"], "score": d["confidence"],
+                                        "x": d["box_xyxy"][0] / w, "y": d["box_xyxy"][1] / h,
+                                        "width": (d["box_xyxy"][2] - d["box_xyxy"][0]) / w,
+                                        "height": (d["box_xyxy"][3] - d["box_xyxy"][1]) / h} for d in defects if d.get("box_xyxy")]})
+    cases = [{"caseId": h["citation"], "origin": "EXTERNAL", "sourceUri": h.get("sourceUri"), "summaryKo": h["excerpt"],
+              "similarity": h.get("score", 0)} for f in state["findings"] if f["source"] == "RAG"
+             for h in f["output"].get("hits", []) if h["kind"] == "CASE"]
+    for c, ko in zip(cases, await tools.translate_cases([c["summaryKo"] for c in cases])):
+        c["originalText"], c["summaryKo"] = c["summaryKo"], ko
+    return {"topCause": candidates[0]["cause"] if candidates else None, "agents": agents, "similarCases": cases}
 
 
 async def request_photo(state: State, config) -> dict:
     cmd = state["command"]
     payload = {"round": cmd["payload"]["round"] + 1, "bodyPart": "wheel",  # TODO: GPT가 부위·설명을 고른다
                "description": "결함 부위를 가까이에서 밝게 다시 찍어 주세요", "checkpoint": f"task-{cmd['taskId']}"}
+    note = limitation_note(state["findings"])
+    if note:
+        payload["description"] += "\n\n" + note
     return {"result": {"eventType": "PHOTO_REQUESTED", "payload": payload}}  # requestKey는 main.py가 붙인다
 
 
@@ -162,7 +255,7 @@ async def fail(state: State, config) -> dict:
 def build_graph():
     g = StateGraph(State)
     for fn in (classify_photos, split_text, pcb_mcp, mech_mcp, rag_mcp, judge, report, request_photo, fail):
-        g.add_node(fn.__name__, fn)
+        g.add_node(fn.__name__, observed(fn))
 
     g.add_edge(START, "classify_photos")
     g.add_edge("classify_photos", "split_text")

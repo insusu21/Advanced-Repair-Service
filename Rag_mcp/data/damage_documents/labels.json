@@ -1,0 +1,68 @@
+[
+  {
+    "document_id": "damage-label:dent:boot",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "boot",
+    "part_ko": "트렁크",
+    "text": "dent: boot — 트렁크 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  },
+  {
+    "document_id": "damage-label:dent:doorouter",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "doorouter",
+    "part_ko": "도어 외판",
+    "text": "dent: doorouter — 도어 외판 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  },
+  {
+    "document_id": "damage-label:dent:fender",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "fender",
+    "part_ko": "펜더",
+    "text": "dent: fender — 펜더 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  },
+  {
+    "document_id": "damage-label:dent:front-bumper",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "front-bumper",
+    "part_ko": "앞범퍼",
+    "text": "dent: front-bumper — 앞범퍼 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  },
+  {
+    "document_id": "damage-label:dent:quaterpanel",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "quaterpanel",
+    "part_ko": "쿼터 패널",
+    "text": "dent: quaterpanel — 쿼터 패널 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  },
+  {
+    "document_id": "damage-label:dent:roof",
+    "source_type": "team_label_definition",
+    "source": "Team-provided model class list",
+    "product_domain": "automotive",
+    "damage_type": "dent",
+    "part": "roof",
+    "part_ko": "지붕",
+    "text": "dent: roof — 지붕 찌그러짐. 자동차 부위 분류 라벨이다. 실제 고장 원인이나 로봇청소기의 대응 부위를 확정하지 않는다.",
+    "applicability": "Automotive model label definition, not a confirmed repair case."
+  }
+]
