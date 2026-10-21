@@ -19,47 +19,21 @@
 ```bash
 ./setup.sh
 ```
-- `.env`: `OPENAI_API_KEY` 입력
-- `backend/.env`: `DB_PASSWORD`, `INTERNAL_SERVICE_TOKEN`(32자 이상), `DEV_PASSWORD`(12자 이상) 입력
-- RAG 인덱스: `cd Rag_mcp && env -u OPENAI_API_KEY uv run --env-file ../.env repair-mcp index`
+- `.env`에 `OPENAI_API_KEY`만 넣는다. (워커는 이 파일 값을 셸 환경변수보다 먼저 쓰니 다른 값은 넣지 않는다)
+- `backend/.env`는 비워 둬도 된다. 비면 로컬 기본값을 쓴다.
 
-## 실행 (터미널 7개, 모두 레포 루트에서 시작)
-주의
-- `env -u OPENAI_API_KEY`: 셸에 옛 키가 남아 있으면 `.env` 키보다 먼저 쓰여 401이 난다. 그래서 뺀다.
-- 5432·9092·8080·5173·9104·8011~8014 포트가 비어 있어야 한다. 확인: `lsof -nP -iTCP:5432 -sTCP:LISTEN` (로컬 Postgres, 다른 Kafka 컨테이너가 자주 잡고 있다)
-- 워커는 레포 루트 `.env` 값을 셸 환경변수보다 먼저 쓴다. 포트를 바꿀 때는 `.env`에서 바꾼다.
-
+## 실행
 ```bash
-# 1. DB·Kafka
-cd backend && set -a && . ./.env && set +a && docker compose up -d --wait
-
-# 2. Spring (dev, 가짜 AI 끔)
-cd backend && set -a && . ./.env && set +a && ./gradlew bootRun --args='--app.mock-ai.enabled=false'
-
-# 3. 기계 MCP
-cd mcp_servers/mechanical && uv run python server.py
-
-# 4. Rag_mcp 4개
-cd Rag_mcp && for s in observation:8011 pcb:8012 damage:8013 rag:8014; do \
-  env -u OPENAI_API_KEY uv run --env-file ../.env repair-mcp serve ${s%%:*} --transport http --port ${s##*:} & done; wait
-
-# 5. 에이전트 워커 (DEMO_FORCE_PHOTO=1: 첫 진단은 무조건 추가 사진 요청, 시연용)
-set -a && . backend/.env && set +a && DEMO_FORCE_PHOTO=1 env -u OPENAI_API_KEY uv run --env-file .env python -m worker.main
-
-# 6. 프론트 → 브라우저 http://localhost:5173
-cd frontend && VITE_USE_MOCK=false VITE_API_BASE_URL= VITE_API_PROXY_TARGET=http://localhost:8080 npx vite --port 5173
-
-# 7. 사진 요청 대역 (요청 후 60초 동안 아무도 안 올리면 지정 사진 제출)
-cd integration && python3 auto_photo.py
+./run.sh     # 전부 띄움 (처음엔 RAG 인덱스 생성으로 1~2분 더 걸림)
+./stop.sh    # 전부 끔 (DB 데이터는 남음)
 ```
-
-## 로그인
-계정 `tech1`, `tech2`(기사), `quality`(본사). 비밀번호는 처음엔 `DEV_PASSWORD`다. `1234`로 바꾸려면 Spring을 한 번 띄운 뒤:
-```bash
-cd backend && docker compose exec postgres psql -U repair -d repair -c \
- "CREATE EXTENSION IF NOT EXISTS pgcrypto; UPDATE app_user SET password_hash=crypt('1234', gen_salt('bf',12)) WHERE email IN ('tech1','tech2','quality')"
-```
-`integration/demo.py`, `auto_photo.py`는 `LOGIN_PASSWORD`(기본 `1234`)로 로그인한다.
+- 브라우저 http://localhost:5173 → 기사 `tech1` / `1234`, 본사 `quality` / `1234`
+- 로그: `logs/` (spring, worker, mech, rag-*, front, auto_photo)
+- 첫 진단은 무조건 추가 사진을 요청한다(시연용). 끄려면 `DEMO_FORCE_PHOTO=0 ./run.sh`
+- 사진을 60초 안에 안 올리면 `auto_photo.py`가 지정 사진을 대신 올린다.
+- 5432·9092를 다른 Postgres/Kafka가 쓰고 있으면 1단계에서 멈춘다. 그 프로그램을 끄고 다시 실행한다.
+  (예: `brew services stop postgresql@17`, `docker stop <kafka 컨테이너>`)
+- 예전 DB를 쓰면 비밀번호가 예전 값일 수 있다. `cd backend && docker compose down -v` 후 다시 `./run.sh` 하면 새로 만든다(데이터 삭제).
 
 ## 시연
 - 접수 화면 예시 시리얼 `RC2026000187` 조회 → 사진 첨부(`integration/시연사진/`) → 접수

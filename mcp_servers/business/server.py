@@ -565,4 +565,5 @@ if __name__ == "__main__":
             methods=["GET"],
         ),
     )
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # [통합] 포트·주소를 환경변수로. 8000은 옛 agent-server와 겹쳐서 run.sh는 127.0.0.1:8015로 띄운다
+    uvicorn.run(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8000")))
