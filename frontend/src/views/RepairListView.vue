@@ -118,7 +118,6 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.gr
           <select id="sort" v-model="store.query.sort" class="select" @change="onSort">
             <option value="receivedAt_desc">최근 접수순</option>
             <option value="receivedAt_asc">오래된 접수순</option>
-            <option value="urgency">긴급도순</option>
           </select>
         </div>
         <button v-if="filtered" type="button" class="btn btn-ghost" @click="clearAll"><X :size="18" /> 필터 초기화</button>

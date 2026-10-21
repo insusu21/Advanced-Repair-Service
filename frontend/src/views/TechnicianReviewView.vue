@@ -359,7 +359,7 @@ const faultText = (c: ReportContent) =>
               </div>
               <div class="row">
                 <button type="button" class="btn" @click="addFault"><Plus :size="18" /> 고장 부위 추가</button>
-                <RouterLink :to="`/repairs/${repair.id}/parts`" class="faint link"><Package :size="14" /> 재고·발주 확인하기</RouterLink>
+                <RouterLink :to="`/repairs/${repair.id}/diagnosis?page=2`" class="faint link"><Package :size="14" /> 재고·발주 확인하기</RouterLink>
               </div>
             </template>
             <p v-if="errOf('faults')" class="error-text"><CircleAlert :size="16" /> {{ errOf('faults') }}</p>

@@ -7,7 +7,7 @@ export const FLOW_STEPS: { key: FlowStep; label: string; route: (id: number) => 
   { key: 'RECEIPT', label: '접수', route: (id) => `/repairs/${id}/progress` },
   { key: 'ANALYSIS', label: 'AI 분석', route: (id) => `/repairs/${id}/progress` },
   { key: 'DIAGNOSIS', label: '진단 확인', route: (id) => `/repairs/${id}/diagnosis` },
-  { key: 'PARTS', label: '부품·발주', route: (id) => `/repairs/${id}/parts` },
+  { key: 'PARTS', label: '부품·발주', route: (id) => `/repairs/${id}/diagnosis?page=2` },
   { key: 'REVIEW', label: '수리 리포트', route: (id) => `/repairs/${id}/review` },
   { key: 'CONFIRM', label: '리포트 확정', route: (id) => `/repairs/${id}/review` },
 ]

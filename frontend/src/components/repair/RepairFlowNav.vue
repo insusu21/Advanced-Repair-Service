@@ -11,7 +11,7 @@ const route = useRoute()
 const curIdx = computed(() => FLOW_STEPS.findIndex((s) => s.key === currentFlowStep(props.repair.status)))
 const viewing = computed(() => {
   const n = route.name
-  return n === 'repair-progress' ? 1 : n === 'repair-diagnosis' ? 2 : n === 'repair-parts' ? 3 : n === 'repair-review' ? 4 : -1
+  return n === 'repair-progress' ? 1 : n === 'repair-diagnosis' ? (route.query.page === '2' ? 3 : 2) : n === 'repair-parts' ? 3 : n === 'repair-review' ? 4 : -1
 })
 // 아직 도달하지 않은 단계로는 이동 불가 (단, 부품 조회는 진단 확인 이후 가능)
 const reachable = (i: number) => i <= Math.max(curIdx.value, props.repair.status === 'TECHNICIAN_REVIEW' ? 4 : curIdx.value)

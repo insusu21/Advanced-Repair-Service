@@ -73,7 +73,8 @@ export interface Repair {
   receivedAt: string
   updatedAt: string
   status: RepairStatus
-  urgency: Urgency
+  /** 화면에서 쓰지 않음. 백엔드가 보내도 깨지지 않게 optional 로만 남김 */
+  urgency?: Urgency
   images: RepairImage[]
   photoRequestCount: number
   /** 진단 진행 중의 단계 상태 (SSE 로 갱신) */
@@ -241,7 +242,8 @@ export interface Diagnosis {
   generatedAt: string
   topCause: string
   confidence: number
-  urgency: Urgency
+  /** 화면에서 쓰지 않음 (optional 로만 남김) */
+  urgency?: Urgency
   candidates: CauseCandidate[]
   agents: AgentResult[]
   errorCodes: ErrorCodeAnalysis[]
@@ -429,7 +431,7 @@ export interface RepairQuery {
   /** 그룹 단위 필터. status 와 함께 쓰지 않는다 */
   group?: StatusGroupKey
   keyword?: string
-  sort?: 'receivedAt_desc' | 'receivedAt_asc' | 'urgency'
+  sort?: 'receivedAt_desc' | 'receivedAt_asc'
   part?: string
   model?: string
   branch?: string

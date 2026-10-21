@@ -109,7 +109,7 @@ const toCase = (c: BeSimilarCase) => ({ receiptNo: c.caseId, model: c.origin ===
 
 export function toDiagnosis(
   task: BeTask,
-  ctx: { parts: Part[]; tools?: BeToolExecution[]; urgency: Urgency; decision: Decision },
+  ctx: { parts: Part[]; tools?: BeToolExecution[]; urgency?: Urgency; decision: Decision },
 ): Diagnosis | null {
   const res = task.result
   // result.candidates(camelCase)가 원본. task.candidates 는 백엔드 정규화 테이블(snake_case: cause_code·cause_description)

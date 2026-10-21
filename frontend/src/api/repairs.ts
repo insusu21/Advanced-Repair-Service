@@ -99,10 +99,7 @@ async function realList(q: RepairQuery): Promise<RepairListResponse> {
       : items.filter((r) => [r.receiptNo, r.product.serialNumber, r.product.model, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)))
   }
   const sort = q.sort ?? 'receivedAt_desc'
-  const RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
-  items = [...items].sort((a, b) =>
-    sort === 'urgency' ? RANK[a.urgency] - RANK[b.urgency] || b.receivedAt.localeCompare(a.receivedAt) : sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt),
-  )
+  items = [...items].sort((a, b) => (sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt)))
   // 상태별 건수(statusCounts)는 백엔드에 없음 → 빈 객체 = 칩 건수 숨김
   return { items, total: items.length, counts: summarize(all), statusCounts: {} }
 }
@@ -144,8 +141,8 @@ export const repairApi = {
       symptoms: req.symptom,
       errorCodes: req.errorCodes,
       firmware: req.product.firmware,
-      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·긴급도·기사 소견 복원에 사용
-      userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind), urgency: req.urgency },
+      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·기사 소견 복원에 사용
+      userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind) },
     }
     const f = new FormData()
     f.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))

@@ -9,7 +9,7 @@ import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
 import { repairApi, toErrorMessage, USE_MOCK } from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { PHOTO_KIND_LABEL, PHOTO_LIMIT } from '@/constants/status'
-import type { PhotoKind, ProductInfo, Urgency } from '@/types'
+import type { PhotoKind, ProductInfo } from '@/types'
 import type { UploadItem } from '@/types/upload'
 import { formatDate, repairId } from '@/utils/format'
 
@@ -23,7 +23,6 @@ const form = reactive({
   product: null as ProductInfo | null,
   symptom: '',
   errorCodes: [] as string[],
-  urgency: 'MEDIUM' as Urgency,
   technicianNote: '',
 })
 /** 접수 사진 2종: PCB · 기계·찌그러짐(모터·외관 변형 등). 칸별 5장, 전체 10장 */
@@ -115,7 +114,7 @@ async function doSubmit() {
   submit.running = true
   submit.error = null
   try {
-    const req = { product: form.product, symptom: form.symptom.trim(), technicianNote: form.technicianNote.trim() || undefined, errorCodes: form.errorCodes, urgency: form.urgency }
+    const req = { product: form.product, symptom: form.symptom.trim(), technicianNote: form.technicianNote.trim() || undefined, errorCodes: form.errorCodes }
     if (!USE_MOCK) {
       // 실서버: 접수 정보 + 사진을 multipart 한 번으로 보내고(202), 서버가 진단 작업까지 만든다
       submit.phase = 'create'
@@ -265,15 +264,6 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
         <p class="faint count">{{ form.technicianNote.length }} / 1000</p>
         <p v-if="errs.note" class="error-text"><CircleAlert :size="16" /> {{ errs.note }}</p>
       </div>
-
-      <div class="field">
-        <span class="label">긴급도</span>
-        <div class="choice-group" role="radiogroup" aria-label="긴급도">
-          <button v-for="u in [{ v: 'HIGH', l: '긴급 · 오늘 처리' }, { v: 'MEDIUM', l: '보통 · 2일 이내' }, { v: 'LOW', l: '낮음 · 일반 처리' }] as const" :key="u.v" type="button" class="choice" role="radio" :aria-checked="form.urgency === u.v" @click="form.urgency = u.v">
-            {{ u.l }}
-          </button>
-        </div>
-      </div>
     </section>
 
     <!-- ========== 3단계 ========== -->
@@ -301,8 +291,6 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
           <dd>{{ form.symptom }} <button type="button" class="btn btn-sm btn-ghost" @click="step = 1"><Pencil :size="14" /> 수정</button></dd>
           <dt>에러 코드</dt>
           <dd>{{ form.errorCodes.length ? form.errorCodes.join(', ') : '없음' }}</dd>
-          <dt>긴급도</dt>
-          <dd>{{ { HIGH: '긴급', MEDIUM: '보통', LOW: '낮음' }[form.urgency] }}</dd>
           <dt>사진</dt>
           <dd>{{ totalPhotos }}장 (PCB {{ photos.PCB.length }} · 기계·찌그러짐 {{ photos.MOTOR.length }})</dd>
           <dt>기사 소견</dt>
