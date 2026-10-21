@@ -88,7 +88,6 @@ export function getProduct(serial: string) {
 }
 
 /* ---------------- 수리 목록 ---------------- */
-const URGENCY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSummaryCounts; statusCounts: RepairStatusCounts } {
   const u = me()
   // 기사는 본인 지점 건만, 본사 품질 담당자는 전체
@@ -114,10 +113,7 @@ export function listRepairs(q: RepairQuery): Page<Repair> & { counts: RepairSumm
     if (g) items = items.filter((r) => g.statuses.includes(r.status))
   }
   const sort = q.sort ?? 'receivedAt_desc'
-  items = [...items].sort((a, b) => {
-    if (sort === 'urgency') return URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || b.receivedAt.localeCompare(a.receivedAt)
-    return sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt)
-  })
+  items = [...items].sort((a, b) => (sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt)))
   const c = (s: Repair['status'][]) => scope.filter((r) => s.includes(r.status)).length
   return {
     items,

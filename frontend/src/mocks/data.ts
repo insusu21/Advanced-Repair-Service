@@ -197,24 +197,24 @@ function motorHousingDiagnosis(imgPrefix: string): DiagTemplate {
     {
       agent: 'PCB',
       verdict: 'NORMAL',
-      summary: '이상 없음',
+      summary: '모터 드라이버 회로 정상 · 전기적 원인 가능성 낮음',
       findings: ['모터 드라이버 IC 주변 소손·변색 없음', '커넥터 J4 납땜 상태 정상', '전해 콘덴서 팽창 없음'],
       confidence: 92,
       annotations: [{ imageId: `${imgPrefix}-img-c`, label: '모터 드라이버 IC · 정상', x: 40, y: 37, w: 21, h: 23, severity: 'LOW' }],
-      sourceIds: ['S1', 'S5'],
+      sourceIds: ['S1', 'S4', 'S5'],
       durationSec: 14,
     },
     {
       agent: 'MOTOR',
       verdict: 'ABNORMAL',
-      summary: '하단 연결부 변형 탐지',
+      summary: '하단 연결부 변형 탐지 · 매뉴얼 기준 교체 대상',
       findings: ['하우징 하단 우측 연결부 약 2mm 들뜸', '연결부 주변 균열선 1개 확인', '로터 회전축 정렬 편차 의심'],
       confidence: 89,
       annotations: [
         { imageId: `${imgPrefix}-img-m`, label: '하단 연결부 변형', x: 47, y: 70, w: 15, h: 13, severity: 'HIGH' },
         { imageId: `${imgPrefix}-img-m`, label: '회전축 정렬 확인 필요', x: 53, y: 33, w: 19, h: 25, severity: 'MEDIUM' },
       ],
-      sourceIds: ['S1', 'S5', 'S6'],
+      sourceIds: ['S1', 'S3', 'S5', 'S6'],
       durationSec: 21,
     },
   ]
@@ -258,10 +258,9 @@ function motorHousingDiagnosis(imgPrefix: string): DiagTemplate {
       },
     ],
     similarCases: [
-      { receiptNo: 'SR-2026-04812', model: 'RC-A100', cause: '모터 하우징 변형', resolution: '모터 어셈블리 교체', similarity: 94, closedAt: isoAgo(60 * 24 * 21) },
-      { receiptNo: 'SR-2026-03377', model: 'RC-A100', cause: '모터 하우징 변형', resolution: '모터 어셈블리 교체', similarity: 91, closedAt: isoAgo(60 * 24 * 40) },
-      { receiptNo: 'SR-2026-02150', model: 'RC-X700', cause: '모터 하우징 균열', resolution: '모터 어셈블리 교체', similarity: 86, closedAt: isoAgo(60 * 24 * 66) },
-      { receiptNo: 'SR-2025-11902', model: 'RC-A100', cause: '회전 센서 커넥터 접촉 불량', resolution: '센서 커넥터 재체결', similarity: 79, closedAt: isoAgo(60 * 24 * 130) },
+      { receiptNo: 'SR-2026-04812', model: 'RC-A100', cause: '하단 연결부 들뜸으로 E103 · 주행 소음', resolution: '모터 어셈블리 교체 후 RPM 정상', similarity: 94, closedAt: isoAgo(60 * 24 * 21) },
+      { receiptNo: 'SR-2026-03377', model: 'RC-A100', cause: '구미 제2공장 3월 생산분 하우징 변형', resolution: '모터 어셈블리 교체 · 동일 로트 점검', similarity: 91, closedAt: isoAgo(60 * 24 * 40) },
+      { receiptNo: 'SR-2026-02150', model: 'RC-X700', cause: '하우징 균열로 회전축 편심', resolution: '모터 어셈블리 교체', similarity: 86, closedAt: isoAgo(60 * 24 * 66) },
     ],
     similarCaseCount: 12,
     inspectionSteps: [
@@ -293,6 +292,11 @@ function wheelSensorDiagnosis(imgPrefix: string): DiagTemplate {
         ? { ...a, verdict: 'SUSPICIOUS', summary: '외관 변형 없음 · 휠 센서 접점 의심', findings: ['하우징 변형 없음', '연결부 체결 정상', '휠 회전 센서 커넥터 접점 마모 흔적'], confidence: 77, annotations: [] }
         : a,
     ),
+    similarCases: [
+      { receiptNo: 'SR-2025-11902', model: 'RC-A100', cause: '회전 센서 커넥터 접점 마모로 펄스 누락', resolution: '휠 회전 센서 교체', similarity: 88, closedAt: isoAgo(60 * 24 * 130) },
+      { receiptNo: 'SR-2026-01544', model: 'RC-A100', cause: '센서 커넥터 반삽입 · 간헐적 한쪽 회전', resolution: '커넥터 재체결로 해결', similarity: 81, closedAt: isoAgo(60 * 24 * 95) },
+    ],
+    similarCaseCount: 5,
     parts: [{ partId: 'P-221', partName: '휠 회전 센서', partNo: 'RM-SN-221', quantity: 1, reason: '센서 접촉부 마모 시 단품 교체 권장' }],
     repairMethod: ['센서 커넥터 재체결 후 증상 재현 확인', '재현 시 휠 회전 센서(RM-SN-221) 교체'],
   }
@@ -314,15 +318,21 @@ function pcbDiagnosis(imgPrefix: string): DiagTemplate {
         ? {
             ...a,
             verdict: 'ABNORMAL',
-            summary: '전원부 변색·소손 의심',
+            summary: '전원부 변색·소손 의심 · 보드 교체 검토',
             findings: ['전원 IC 주변 변색', '콘덴서 C21 미세 팽창'],
             confidence: 71,
             annotations: [{ imageId: `${imgPrefix}-img-c`, label: '전원부 변색', x: 66, y: 25, w: 15, h: 15, severity: 'HIGH' }],
           }
         : a.agent === 'MOTOR'
-          ? { ...a, verdict: 'NORMAL', summary: '이상 없음', findings: ['외관 정상'], confidence: 88, annotations: [] }
+          ? { ...a, verdict: 'NORMAL', summary: '기계부 이상 없음', findings: ['하우징·연결부 외관 정상', '회전축 정렬 정상'], confidence: 88, annotations: [] }
           : a,
     ),
+    similarCases: [
+      { receiptNo: 'SR-2026-05120', model: 'RC-A100', cause: '전원 IC 주변 소손 · 충전 중 재부팅', resolution: '메인 PCB 교체 · 펌웨어 재설치', similarity: 90, closedAt: isoAgo(60 * 24 * 14) },
+      { receiptNo: 'SR-2026-02981', model: 'RC-X700', cause: '콘덴서 팽창으로 전원 불안정', resolution: '메인 PCB 교체', similarity: 83, closedAt: isoAgo(60 * 24 * 52) },
+      { receiptNo: 'SR-2025-12077', model: 'RC-A100', cause: '배터리 보호회로 동작 (PCB 정상)', resolution: '배터리 팩 교체', similarity: 72, closedAt: isoAgo(60 * 24 * 120) },
+    ],
+    similarCaseCount: 7,
     parts: [{ partId: 'P-310', partName: '메인 PCB', partNo: 'RM-PC-310', quantity: 1, reason: '전원부 소손은 보드 단위 교체' }],
     repairMethod: ['메인 PCB(RM-PC-310) 교체', '펌웨어 최신 버전 재설치'],
   }

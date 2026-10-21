@@ -21,7 +21,7 @@ defineEmits<{ retry: [] }>()
     <AlertTriangle v-else :size="compact ? 28 : 40" class="icon" aria-hidden="true" />
     <strong>{{ title ?? (state === 'loading' ? '불러오는 중입니다' : state === 'empty' ? '표시할 내용이 없습니다' : '문제가 발생했습니다') }}</strong>
     <p v-if="message" class="muted">{{ message }}</p>
-    <div class="actions">
+    <div v-if="state === 'error' || $slots.default" class="actions">
       <button v-if="state === 'error'" class="btn" type="button" @click="$emit('retry')">
         <RotateCw :size="18" /> 다시 시도
       </button>

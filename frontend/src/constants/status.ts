@@ -12,7 +12,7 @@ import {
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AiAcceptance, AnalysisStage, AnalysisToolKind, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
+import type { AiAcceptance, AnalysisStage, AnalysisToolKind, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -86,12 +86,6 @@ export const SCORE_HINT = '고장 확률이 아니라 AI가 후보를 비교한 
 export const ROLE_LABEL: Record<Role, string> = {
   TECHNICIAN: '서비스센터 기사',
   QUALITY_MANAGER: '본사 품질 담당자',
-}
-
-export const URGENCY_META: Record<Urgency, { label: string; tone: Tone }> = {
-  HIGH: { label: '긴급', tone: 'danger' },
-  MEDIUM: { label: '보통', tone: 'warning' },
-  LOW: { label: '낮음', tone: 'neutral' },
 }
 
 export const ORDER_STATUS_META: Record<OrderStatus, { label: string; tone: Tone }> = {
