@@ -223,17 +223,18 @@ def test_business_gateway_auth_mapping_and_write_rejection(monkeypatch):
     {'is_defective': False, 'defects': [{'type': 'short', 'confidence': .4}], 'annotated_image': '/tmp/image.jpg'},
     {'is_defective': True, 'defects': [{'type': 'short', 'confidence': float('nan')}], 'annotated_image': '/tmp/image.jpg'},
 ])
-def test_bad_image_output_fails_without_requesting_photos(fixture_tools, tmp_path, bad):
+def test_bad_image_output_requests_photos_with_error_details(fixture_tools, tmp_path, bad):
     tools.call_pcb_mcp.return_value = bad
     async def run():
         journal, producer, cmd = Journal(tmp_path/'state.db'), Producer(), command()
         try:
             result = await main.handle(cmd, producer, journal)
-            assert result == {'eventType': 'DIAGNOSIS_FAILED', 'payload': {'errorCode': 'REQUIRED_TOOL_FAILED'}}
-            assert not any(e.get('eventType') == 'PHOTO_REQUESTED' for e in producer.events)
+            assert result['eventType'] == 'PHOTO_REQUESTED'
+            assert result['payload']['analysisResults'][1]['status'] == 'ERROR'
+            assert any(e.get('eventType') == 'PHOTO_REQUESTED' for e in producer.events)
             tools.write_report.assert_not_awaited()
             markdown = next(report.OUT.glob('*.md')).read_text()
-            assert '정상 판정이 아닙니다' in markdown
+            assert 'ERROR' in markdown
             assert 'private server details' not in json.dumps(producer.events)
             assert json.loads(next(report.OUT.glob('*.json')).read_text())['result'] == result
         finally:
@@ -241,7 +242,7 @@ def test_bad_image_output_fails_without_requesting_photos(fixture_tools, tmp_pat
     asyncio.run(run())
 
 
-def test_required_image_retries_then_failed_and_duplicate_reuses_result(fixture_tools, monkeypatch, tmp_path):
+def test_image_retries_then_requests_input_and_duplicate_reuses_result(fixture_tools, monkeypatch, tmp_path):
     monkeypatch.setattr(harness.asyncio, 'sleep', AsyncMock())
     model = AsyncMock(side_effect=ConnectionError('private endpoint'))
     model.__name__ = 'test_image_model'
@@ -250,15 +251,15 @@ def test_required_image_retries_then_failed_and_duplicate_reuses_result(fixture_
         journal, producer, cmd = Journal(tmp_path/'state.db'), Producer(), command()
         try:
             result = await main.handle(cmd, producer, journal)
-            assert result['payload']['errorCode'] == 'REQUIRED_TOOL_FAILED'
+            assert result['eventType'] == 'PHOTO_REQUESTED'
             assert model.await_count == 3
             assert (await main.handle(cmd, producer, journal)) == result
             assert model.await_count == 3
             metrics = json.loads(journal.db.execute('SELECT metrics FROM executions').fetchone()[0])
             assert metrics['retries'] == 2
-            finals = [e for e in producer.events if e['eventType'] == 'DIAGNOSIS_FAILED']
+            finals = [e for e in producer.events if e['eventType'] == 'PHOTO_REQUESTED']
             assert len(finals) == 1
-            assert all(e['eventType'] != 'PHOTO_REQUESTED' for e in producer.events)
+            assert all(e['eventType'] != 'DIAGNOSIS_FAILED' for e in producer.events)
         finally:
             journal.close()
     asyncio.run(run())
@@ -274,7 +275,7 @@ def test_mixed_success_cannot_hide_failed_mechanical_tool(fixture_tools, tmp_pat
         journal = Journal(tmp_path/'state.db')
         try:
             result = await main.handle(cmd, Producer(), journal)
-            assert result['payload']['errorCode'] == 'REQUIRED_TOOL_FAILED'
+            assert result['eventType'] == 'PHOTO_REQUESTED'
             tools.write_report.assert_not_awaited()
         finally:
             journal.close()

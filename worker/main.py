@@ -15,6 +15,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
 from . import config as C
 from . import report
+from .context_policy import masked, check_event_size
 from .observability import configure_logging
 from langgraph.errors import GraphRecursionError
 from .graph import build_graph
@@ -49,7 +50,7 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
             async def emit(kind, payload):
                 async with lock:
                     with journal.db:
-                        journal.append(command, kind, payload)
+                        journal.append(command, kind, check_event_size(masked(payload)))
                     try:
                         await flush(journal, command, producer)
                     except Exception as exc:
@@ -59,7 +60,7 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
             try:
                 metrics = {}
                 state = await harness.invoke(GRAPH, command, emit, metrics)
-                result = state["result"]
+                result = check_event_size(masked(state["result"]))
                 if result["eventType"] == "PHOTO_REQUESTED":
                     result["payload"]["requestKey"] = str(uuid.uuid5(uuid.NAMESPACE_URL, command["eventId"] + ":photo"))
                 journal.finish(command, result)  # JSON 계약 위반도 아래 실패 결과로 처리

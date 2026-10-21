@@ -3,6 +3,42 @@
 기사 접수(사진) → Spring → Kafka → LangGraph 에이전트(PCB·기계·RAG MCP + GPT) → Spring → 프론트 진단 화면 → 진단 확인 → 수리 리포트 → 종결까지 돈다.
 팀원 코드를 합치면서 고친 것: **[개조내역.md](개조내역.md)**
 
+## Agent 담당 범위와 현재 구현
+
+이 작업은 `agent/feat/harness-hardening` 브랜치에서 관리한다. 새 작업은 최신 `dev`에서 영역/타입/작업명 형식으로 브랜치를 만들고, 작업 브랜치를 push한 뒤 `dev` 대상으로 PR을 생성한다.
+
+| 항목 | 현재 구현 |
+|---|---|
+| 오케스트레이션 | 스켈레톤 StateGraph 유지. 사진 분류 → 소견 처리 → 필요한 사진 MCP 병렬 호출 → RAG → 판단 → 리포트 또는 추가 자료 요청 |
+| MCP 선택 | PCB/MOTOR 사진 구분을 사용하고 GENERAL은 분류한다. 텍스트 단서로 사진 MCP를 강제 선택하지 않는다 |
+| RAG 입력 | 기사 소견·PCB 라벨·기계 표면 결함 라벨 전달. 자동차 찌그러짐 라벨은 검색 입력에서 제외 |
+| 오류 처리 | 사진별 오류를 수집하며 나머지 분석 계속. 보조 해석·검색 실패는 근거 제한 안내. 추가 자료 요청은 작업 전체 최대 3회 |
+| 상태 저장 | SQLite inbox/outbox로 요청·결과·이벤트 영속화. 완료된 중복 이벤트는 저장 결과 사용. 추가 자료는 새 이벤트로 재분석하며 LangGraph checkpointer는 사용하지 않음 |
+| 승인 | Agent는 `recommendedParts`에 부품 ID·수량을 제시. 재고 조회·발주 승인·처리는 Spring 담당 |
+| 프롬프트 | 기존 사진 분류·소견 분리·리포트 프롬프트 파일과 manifest 버전·해시 관리 |
+| 실행 제어 | 이벤트별 20 super-step·노드 실행 20회·1,800초. 같은 도구와 같은 입력의 시도는 재시도 포함 3회. 사람의 추가 자료 대기 시간은 제외 |
+| 문맥 제어 | MCP 응답·이벤트 크기 제한, 리포트 근거 축약, 직접 LLM 호출 토큰 예산·사용량 기록, 자유 텍스트 패턴 마스킹. 적용 누락은 아래 표 참고 |
+| 관측 | 구조화 로그 및 LangSmith. 진단 이벤트별 trace 생성, 보고서에 trace_id 저장 |
+
+### 보완 범위
+
+| 항목 | 현황 |
+|---|---|
+| 선택 근거 로그 | `classify_photos`·`pick_mcps`의 선택/미선택 이유를 별도 로그·trace 메타데이터로 남기는 기능은 미구현 |
+| 사례 번역 | 프롬프트 파일 분리, 호출 전 입력 보호·토큰 예산 예약 미적용. 예외를 원문 반환으로 처리하므로 재시도·제한 예외 정책 보완 필요 |
+| 소견 분리 | 호출 전 토큰 예약·출력 마스킹은 적용. 입력 원문의 마스킹·길이 축약은 미적용 |
+| 원격 MCP 내부 관측 | 별도 MCP 서버 내부 LLM·임베딩 사용량과 Agent trace 연결은 미구현 |
+
+낮은 확신·근거 충돌의 종합 판단과 최종 미해결 상세 결과의 화면 연동은 현재 Agent 작업 범위에서 제외한다. 교재의 checkpointer·Agent 승인 interrupt 방식 대신 SQLite 재분석·Spring 승인 구조를 사용하므로, 교재 항목 전체 완료로 간주하지 않는다.
+
+### 리포트와 검증 범위
+
+- 리포트: `worker/reports/task-{taskId}_revision-{inputRevision}_고장리포트.md` 및 같은 이름의 `.json`.
+- JSON에는 `command`, `result`, `execution`이 저장된다. 결과 파일은 Git에 포함하지 않으며 실행 후 생성된다.
+- 정상 완료·추가 자료 요청·최종 미해결 결과 모두 로컬 리포트를 생성한다. 파일 생성과 Spring 화면 표시 여부는 별도다.
+- 2026-10-21 Agent 테스트 127개 통과를 확인했다. 모의 MCP·LLM 및 로컬 이벤트 기반 회귀 검증이며, 현재 통합본 전체의 실제 서비스 검증을 대신하지 않는다.
+- LangSmith 합성 연결 테스트에서 루트·그래프·노드·도구가 동일 trace로 원격 저장되는 것을 확인했다. 실제 진단 호출의 지속적인 전송·토큰 기록 검증과는 구분한다.
+
 ## 구성
 | 폴더 | 내용 | 포트 |
 |---|---|---|
@@ -21,7 +57,7 @@
 ```bash
 ./setup.sh
 ```
-- `.env`에 `OPENAI_API_KEY`만 넣는다. (워커는 이 파일 값을 셸 환경변수보다 먼저 쓰니 다른 값은 넣지 않는다)
+- 루트 `.env`에 `OPENAI_API_KEY`를 설정한다. LangSmith 설정도 같은 파일에 넣을 수 있다. 워커는 `.env`의 비어 있지 않은 값을 셸 환경변수보다 우선하므로, 서버 주소·내부 토큰을 추가할 때는 `run.sh` 및 Spring 설정과 일치시킨다.
 - `backend/.env`는 비워 둬도 된다. 비면 로컬 기본값을 쓴다.
 
 ## 실행
@@ -46,7 +82,7 @@
 | Spring 쪽 연결 | `backend/.../repair/BusinessMcp.java` (`realmcp` 프로필이면 실제, 아니면 가짜) |
 | 중계 | `worker/business_gateway.py` (`lookup`) |
 | 업무 MCP | `mcp_servers/business/server.py` (`get_part_availability`), DB 연결 `db.py` |
-| 프론트 | `frontend/src/api/parts.ts` → 화면 `RepairPartsView.vue` |
+| 프론트 | `frontend/src/api/parts.ts` → `PartsOrderView.vue`·`components/parts/PartsOrderPage.vue` |
 
 확인 순서 (`./run.sh` 뒤):
 1. 도구 목록: `cd mcp_servers/business && MCP_URL=http://127.0.0.1:8015/mcp uv run python client.py`
@@ -55,7 +91,7 @@
    curl -s -X POST localhost:8089/rpc -H "Authorization: Bearer local-dev-business-token" -H 'content-type: application/json' \
      -d '{"jsonrpc":"2.0","id":"t","method":"tools/call","params":{"name":"inventory.lookup","arguments":{"partIds":["1","3"]}}}'
    ```
-3. 화면: 접수 → 진단 완료 → 진단 결과의 **필요 부품** (`/repairs/{id}/parts`)에서 재고·발주. 본사 `quality`는 **발주 승인 대기**
+3. 화면: 접수 → 진단 완료 → 진단 결과의 부품 페이지 (`/repairs/{id}/diagnosis?page=2`)에서 재고·발주 확인. 기존 `/repairs/{id}/parts`는 이 페이지로 이동한다. 전체 부품·발주는 `/parts`, 본사 승인 대기는 `/order-approvals`에서 확인한다.
 4. 로그: `tail -f logs/business-mcp.log` (요청마다 `POST /mcp`)
 5. DB: `select * from stock_snapshot order by id desc;` / `select * from purchase_order order by id desc;`
 
@@ -99,3 +135,44 @@ cd backend && ./gradlew test
 | 22 | [Burnt tantalum capacitor (2)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(2)_(23764576950).jpg) | htomari | CC BY-SA 2.0 |
 | 23 | [Burnt tantalum capacitor (3)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(3)_(23432016184).jpg) | htomari | CC BY-SA 2.0 |
 | 24 | [OpenRov Circuits électroniques](https://commons.wikimedia.org/wiki/File:OpenRovProjetCh%27tiPlouf2017Circuits_%C3%A9lectroniques.jpg) | Lamiot | CC BY-SA 4.0 |
+
+## LangSmith 실행 추적
+
+`.env`에 다음 값을 설정한 뒤 워커를 재시작한다. API 키는 Git에 올리지 않는다.
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=발급받은_키
+LANGSMITH_PROJECT=repair-agent
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+- 기본값은 비활성화(`false`). 활성화했는데 키가 없으면 명시적인 설정 오류로 처리한다.
+- 진단 이벤트 한 건마다 `repair.diagnosis` 루트 추적을 생성한다. 그 아래 `repair.graph`, 노드, 도구 시도·재시도와 Agent의 LangChain LLM 호출이 연결된다.
+- `thread_id` 메타데이터는 taskId를 사용하므로 추가 자료 제출 전후 실행을 묶어 볼 수 있다. 이것은 관측용 그룹이며 체크포인터 구현이 아니다.
+- 로컬 실행 통계와 JSON의 `execution.trace_id`, Markdown의 실행 추적 항목에서 같은 ID를 확인한다.
+- SDK 클라이언트에서 입력·출력 본문을 숨긴다. 작업 식별자, 단계·도구 이름, 시간, 오류, LLM 사용량 등 실행 메타데이터는 전송한다. 오류 문자열의 완전한 개인정보 제거는 별도 하네스 보완 범위다.
+- Agent가 직접 호출한 LangChain LLM의 토큰 정보는 SDK 자동 추적을 사용한다. 별도 MCP 서버 내부 LLM·임베딩 호출은 이 추적에 포함되지 않는다.
+- 사례 번역의 원문 반환 정책은 그대로 유지된다. 번역 예외를 내부에서 처리하므로 해당 실패가 성공 반환으로 보일 수 있으며 Recovery 단계에서 별도 보완한다.
+
+확인: LangSmith의 `repair-agent` 프로젝트 → `repair.diagnosis` → 그래프·노드·도구 및 LLM 하위 실행을 확인한다.
+실제 서비스 호출을 통한 원격 추적 검증은 유효한 키와 실행 환경이 필요하다.
+
+검증 명령: `.venv/bin/python -m pytest -q`
+공식 문서: https://docs.langchain.com/langsmith/trace-with-langgraph
+
+## 사진 분석 오류와 추가 자료 요청
+
+- 사진 target(PCB/MOTOR)을 기준으로 해당 이미지 MCP만 호출한다. GENERAL은 사진 분류 후 선택한다. 텍스트 단서로 사진 MCP를 강제 호출하지 않는다.
+- Agent에 사진 없는 입력이 전달되면 이미지 MCP를 건너뛰고 소견·RAG 경로로 진행한다. 프론트·Spring의 사진 접수 필수 여부는 변경하지 않았다.
+- 사진 분류/이미지 MCP 오류는 사진별로 기록하고 다른 사진·병렬 분석을 계속한다. 오류 응답을 정상 또는 검출 없음으로 바꾸지 않는다.
+- 이미지 분석 오류가 남으면 0~2차에서는 다른 사진에 검출 결과가 있어도 추가 자료를 요청한다. 초기 접수 제외 작업 전체 최대 3회다. 3차 재분석 후에는 사진 검출, 표준화된 소견 또는 RAG 검색 결과가 하나라도 있으면 남은 근거로 리포트를 작성한다. 사용할 근거가 모두 없으면 `INCONCLUSIVE_AFTER_THIRD_PHOTO`로 종료한다.
+- 추가 요청 부위는 PCB/MOTOR/GENERAL로 지정한다. 서버 오류가 사진 문제라는 뜻은 아니며 서비스 복구도 필요할 수 있다는 안내를 포함한다.
+- `PHOTO_REQUESTED`와 최종 미해결 `DIAGNOSIS_FAILED`에 `summary`, `analysisResults`를 추가해 수집 결과·오류 상태를 보존하고 JSON/Markdown으로 저장한다. 기존 이벤트 종류·필수 필드는 유지한다.
+- Spring은 추가 요청의 description을 전달한다. 최종 FAILED 상세 summary/analysisResults는 현재 진단 결과 API·화면에서 표시하지 않으므로 별도 백엔드/프론트 연동이 필요하다. Agent 파일·수신 이벤트에는 남는다.
+- 보조 해석·RAG 오류는 기존대로 근거 제한 안내 후 진행한다. 실행 예산 초과, 잘못된 입력·사진 다운로드/무결성 오류, 리포트 LLM 오류는 기존 실패 처리 정책을 유지한다.
+- 이미지 오류가 없고 결함이 검출되면 완료한다. 검출이 없으면 3회까지 추가 자료를 요청하고, 마지막에는 소견·검색 근거로 작성할 수 있다. 사진 근거가 없는 리포트에는 해당 제한을 명시한다. 검색 결과의 존재는 고장 원인 확정을 의미하지 않는다. 낮은 확신·근거 충돌의 종합 판단은 별도 구현하지 않았다.
+- 사진 근거 없는 리포트 작성에는 LLM이 필요하다. 키가 없는 규칙 모드의 작성기는 사진 검출을 전제로 하므로 이 경로를 지원하지 않는다.
+
+검증: 사진별 오류 격리, 입력별 MCP 선택, 분류 실패, 서로 다른 사진으로 3회 재입력,
+마지막 회차 복구/미해결, 중복 이벤트, JSON 계약 및 리포트 저장을 모의 MCP/LLM으로 테스트했다.
