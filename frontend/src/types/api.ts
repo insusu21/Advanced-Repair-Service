@@ -30,7 +30,8 @@ export interface CreateRepairRequest {
   /** 기사 소견 (선택, 최대 1000자) */
   technicianNote?: string
   errorCodes: string[]
-  urgency: Urgency
+  /** 접수 화면에서 더 이상 보내지 않음 */
+  urgency?: Urgency
 }
 
 /** POST /api/repairs/{id}/images · additional-images (실서버는 multipart/form-data) */
@@ -62,7 +63,7 @@ export interface ApprovalRequest {
 /** POST /api/repairs/{id}/reanalysis */
 export interface ReanalysisRequest {
   reason: string
-  scope?: ('PCB' | 'MOTOR' | 'SW')[]
+  scope?: ('PCB' | 'MOTOR')[]
 }
 
 /** PUT /api/repairs/{id}/report — 리포트 초안 저장

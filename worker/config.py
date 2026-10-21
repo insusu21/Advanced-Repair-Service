@@ -68,3 +68,18 @@ MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
 MAX_RUN_TOKENS = int(os.getenv("MAX_RUN_TOKENS", "800000"))
 IMAGE_TOKEN_RESERVE = int(os.getenv("IMAGE_TOKEN_RESERVE", "50000"))
 MAX_EVENT_BYTES = int(os.getenv("MAX_EVENT_BYTES", "750000"))
+# [통합] 업무 MCP(재고·공장). 기본은 run.sh가 띄우는 로컬 mcp_servers/business (우리 DB를 그대로 읽음)
+# 팀원 ngrok 서버를 쓰려면 BUSINESS_MCP_URL=https://<ngrok>/mcp 와 아래 대응표(예: 1:47,3:46 / 1:12 / 1:12)를 준다
+BUSINESS_MCP_URL = os.getenv("BUSINESS_MCP_URL", "http://127.0.0.1:8015/mcp")
+
+
+def id_map(name, default):
+    """'1:47,3:46' → {'1': '47', '3': '46'}"""
+    return dict(pair.split(":") for pair in os.getenv(name, default).split(",") if pair)
+
+
+# [통합] 업무 MCP DB 번호가 Spring과 다를 때만 쓰는 대응표 (Spring 번호:업무 MCP 번호). 비면 같은 번호
+# ngrok 서버 기준 값: 부품 1:47,3:46 (MOTOR/PCB-DEMO-001, Lidar 없음) / 창고 1:12 / 공장 1:12
+BUSINESS_PART_MAP = id_map("BUSINESS_PART_MAP", "")
+BUSINESS_WAREHOUSE_MAP = id_map("BUSINESS_WAREHOUSE_MAP", "")
+BUSINESS_FACTORY_MAP = id_map("BUSINESS_FACTORY_MAP", "")

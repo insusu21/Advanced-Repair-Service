@@ -8,3 +8,4 @@ __pycache__/
 .DS_Store
 worker/reports/
 mcp_servers/*/results/
+logs/

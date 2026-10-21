@@ -26,7 +26,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'repairs/:id(\\d+)', redirect: (to) => `/repairs/${to.params.id}/diagnosis` },
       { path: 'repairs/:id(\\d+)/progress', name: 'repair-progress', component: () => import('@/views/RepairProgressView.vue'), meta: { title: '진단 진행', roles: ALL, nav: 'repairs' } },
       { path: 'repairs/:id(\\d+)/diagnosis', name: 'repair-diagnosis', component: () => import('@/views/DiagnosisResultView.vue'), meta: { title: 'AI 진단 결과', roles: ALL, nav: 'repairs' } },
-      { path: 'repairs/:id(\\d+)/parts', name: 'repair-parts', component: () => import('@/views/RepairPartsView.vue'), meta: { title: '필요 부품 · 발주 요청', roles: ['TECHNICIAN', 'QUALITY_MANAGER'], nav: 'repairs' } },
+      // 부품·발주는 진단 노트 2쪽으로 합쳐짐 (기존 링크 호환용 리다이렉트)
+      { path: 'repairs/:id(\\d+)/parts', name: 'repair-parts', redirect: (to) => ({ path: `/repairs/${to.params.id}/diagnosis`, query: { page: '2' } }) },
       { path: 'repairs/:id(\\d+)/review', name: 'repair-review', component: () => import('@/views/TechnicianReviewView.vue'), meta: { title: '수리 리포트', roles: ALL, nav: 'repairs' } },
       { path: 'approvals/:id(\\d+)', name: 'approval-detail', component: () => import('@/views/ApprovalDetailView.vue'), meta: { title: '본사 수동 검토', roles: ['QUALITY_MANAGER'], nav: 'repairs' } },
       { path: 'parts', name: 'parts', component: () => import('@/views/PartsOrderView.vue'), meta: { title: '부품 및 발주', roles: ['TECHNICIAN', 'QUALITY_MANAGER'], nav: 'parts' } },

@@ -21,6 +21,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   ORDER_STATE: '발주 상태가 바뀌어 이 처리를 할 수 없습니다. 목록을 새로고침해 주세요.',
   INSUFFICIENT_STOCK: '창고 재고가 부족합니다. 수량이나 출고 창고를 바꾸거나 공장 발주로 요청해 주세요.',
   NOT_SUPPORTED: '아직 백엔드에서 지원하지 않는 기능입니다.',
+  // 진단 실패 (AI 서버 → 백엔드 task.error_code)
+  INCONCLUSIVE_AFTER_THIRD_PHOTO: '추가 사진을 3번 받았지만 AI가 판단하지 못했습니다. 본사 품질 담당자가 직접 진단하도록 수동 검토로 넘겼습니다.',
   IDEMPOTENCY_KEY_REUSED: '이미 처리된 요청과 내용이 다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.',
 }
 

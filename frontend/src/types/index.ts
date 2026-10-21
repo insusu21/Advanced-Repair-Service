@@ -73,11 +73,14 @@ export interface Repair {
   receivedAt: string
   updatedAt: string
   status: RepairStatus
-  urgency: Urgency
+  /** 화면에서 쓰지 않음. 백엔드가 보내도 깨지지 않게 optional 로만 남김 */
+  urgency?: Urgency
   images: RepairImage[]
   photoRequestCount: number
   /** 진단 진행 중의 단계 상태 (SSE 로 갱신) */
   stages: AnalysisStageState[]
+  /** '분석 진행' 단계에서 실행된 도구 (도착 순서). 실서버: TOOL_EXECUTED · /diagnosis/tools */
+  tools?: AnalysisToolRun[]
   progress: number
   progressMessage?: string
   /** 분석 실패 사유 (있으면 진단 진행 화면에 실패 배너 표시) */
@@ -96,19 +99,28 @@ export type Urgency = 'HIGH' | 'MEDIUM' | 'LOW'
 
 /* ---------------- 진단 진행 (SSE) ---------------- */
 
-export type AnalysisStage =
-  | 'QUEUED'
-  | 'ORCHESTRATION'
-  | 'PCB_ANALYSIS'
-  | 'MOTOR_ANALYSIS'
-  | 'SW_ANALYSIS'
-  | 'SIMILAR_CASE_SEARCH'
-  | 'SYNTHESIS'
+/** 고정 단계는 3개뿐: 접수·대기열 → 분석 진행 → 결과 종합.
+ *  '분석 진행' 안에는 실제로 실행된 도구(AnalysisToolRun)가 도착한 순서대로 추가된다. */
+export type AnalysisStage = 'QUEUED' | 'ANALYSIS' | 'SYNTHESIS'
 
 export type StageRunState = 'PENDING' | 'RUNNING' | 'DONE' | 'SKIPPED' | 'FAILED' | 'WAITING_INPUT'
 
 export interface AnalysisStageState {
   stage: AnalysisStage
+  state: StageRunState
+  message?: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+/** 분석 도구 종류 — 실서버 agentType: PCB · MOTOR(기계) · RAG(매뉴얼·유사 사례), 그 외는 OTHER(도구 이름 표시) */
+export type AnalysisToolKind = 'PCB' | 'MOTOR' | 'RAG' | 'OTHER'
+
+/** '분석 진행' 단계 안에서 실제로 실행된 도구 하나 (도착한 순서대로) */
+export interface AnalysisToolRun {
+  id: string
+  kind: AnalysisToolKind
+  label: string
   state: StageRunState
   message?: string
   startedAt?: string
@@ -121,6 +133,8 @@ export interface RepairEvent {
   status: RepairStatus
   stage?: AnalysisStage
   stageState?: StageRunState
+  /** 도구 실행 이벤트 (분석 진행 단계 안의 항목 추가·갱신) */
+  tool?: AnalysisToolRun
   message: string
   progress: number
   at?: string
@@ -170,7 +184,8 @@ export interface CauseCandidate {
   sourceIds: string[]
 }
 
-export type AgentType = 'PCB' | 'MOTOR' | 'SW'
+/** 부위별 분석: PCB · 기계(MOTOR). SW 분석은 없음 */
+export type AgentType = 'PCB' | 'MOTOR'
 export type AgentVerdict = 'NORMAL' | 'ABNORMAL' | 'SUSPICIOUS' | 'SKIPPED'
 
 export interface ImageAnnotation {
@@ -227,7 +242,8 @@ export interface Diagnosis {
   generatedAt: string
   topCause: string
   confidence: number
-  urgency: Urgency
+  /** 화면에서 쓰지 않음 (optional 로만 남김) */
+  urgency?: Urgency
   candidates: CauseCandidate[]
   agents: AgentResult[]
   errorCodes: ErrorCodeAnalysis[]
@@ -415,7 +431,7 @@ export interface RepairQuery {
   /** 그룹 단위 필터. status 와 함께 쓰지 않는다 */
   group?: StatusGroupKey
   keyword?: string
-  sort?: 'receivedAt_desc' | 'receivedAt_asc' | 'urgency'
+  sort?: 'receivedAt_desc' | 'receivedAt_asc'
   part?: string
   model?: string
   branch?: string

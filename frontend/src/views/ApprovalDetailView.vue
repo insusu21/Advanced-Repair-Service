@@ -29,7 +29,7 @@ const MANUAL_ACTIONS: ApprovalAction[] = [
 
 const suggestion = computed(() =>
   diagnosis.value
-    ? `AI 초안: ${diagnosis.value.topCause} (${diagnosis.value.confidence}%) — 기사가 본사 검토 요청`
+    ? `AI 초안: ${diagnosis.value.topCause} (판단 점수 ${diagnosis.value.confidence}점) — 기사가 본사 검토 요청`
     : 'AI 판독 불가 — 사진 추가 요청 한도 초과 또는 분석 실패',
 )
 const evidence = computed(() => {

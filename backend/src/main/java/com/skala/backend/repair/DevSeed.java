@@ -18,7 +18,7 @@ public class DevSeed implements ApplicationRunner {
     final Store db;final DataSource source;final PasswordEncoder encoder;final String password;
     public DevSeed(Store db,DataSource source,PasswordEncoder encoder,@Value("${app.seed-password}") String password) {this.db=db;this.source=source;this.encoder=encoder;this.password=password;}
     @Override @Transactional public void run(ApplicationArguments args) {
-        if(password.length()<12) throw new IllegalArgumentException("DEV_PASSWORD requires at least 12 characters");
+        // [통합] 12자 이상 검사 제거: 로컬 시연에서 tech1/1234로 바로 로그인하려고. dev 프로필에서만 도는 코드다
         new ResourceDatabasePopulator(new ClassPathResource("db/dev-seed.sql")).execute(source);
         String hash=encoder.encode(password);
         for(int n=1;n<=3;n++) {

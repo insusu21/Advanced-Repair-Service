@@ -6,6 +6,7 @@
 import type {
   AgentResult,
   AnalysisStageState,
+  AnalysisToolRun,
   ApprovalRecord,
   DataSource,
   Diagnosis,
@@ -20,7 +21,8 @@ import type {
   Urgency,
   User,
 } from '@/types'
-import { STAGE_ORDER } from '@/constants/status'
+import { STAGE_ORDER, TOOL_KIND_LABEL } from '@/constants/status'
+import { ERROR_MESSAGES } from '@/constants/errors'
 import { isoAgo } from '@/utils/format'
 
 /* ---------------- 사용자 ---------------- */
@@ -159,12 +161,32 @@ function baseImages(prefix: string, minutesAgo: number): RepairImage[] {
 }
 
 /* ---------------- 단계 상태 ---------------- */
-export function stagesFor(status: RepairStatus, skipSw = false): AnalysisStageState[] {
-  const done = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW'].includes(status)
+const ANALYZED: RepairStatus[] = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW']
+
+/** 고정 3단계 상태. 분석이 끝난 건은 모두 DONE (수동 검토 전환 건은 분석 진행이 FAILED) */
+export function stagesFor(status: RepairStatus): AnalysisStageState[] {
+  const done = ANALYZED.includes(status)
   return STAGE_ORDER.map((stage) => ({
     stage,
-    state: done ? (stage === 'SW_ANALYSIS' && skipSw ? 'SKIPPED' : 'DONE') : 'PENDING',
+    state: !done ? 'PENDING' : status === 'MANUAL_REVIEW' && stage !== 'QUEUED' ? (stage === 'ANALYSIS' ? 'FAILED' : 'PENDING') : 'DONE',
   }))
+}
+
+const tool = (repairId: number, kind: 'PCB' | 'MOTOR' | 'RAG', state: AnalysisToolRun['state'], message?: string): AnalysisToolRun => ({
+  id: `${repairId}-${kind}`,
+  kind,
+  label: TOOL_KIND_LABEL[kind],
+  state,
+  message,
+})
+
+/** 분석이 끝난 건의 실행 도구 목록 (도착 순서) */
+export function toolsFor(repairId: number, status: RepairStatus): AnalysisToolRun[] {
+  if (!ANALYZED.includes(status)) return []
+  if (status === 'MANUAL_REVIEW') {
+    return [tool(repairId, 'PCB', 'DONE'), tool(repairId, 'RAG', 'DONE'), tool(repairId, 'MOTOR', 'FAILED', ERROR_MESSAGES.INCONCLUSIVE_AFTER_THIRD_PHOTO)]
+  }
+  return [tool(repairId, 'PCB', 'DONE'), tool(repairId, 'MOTOR', 'DONE'), tool(repairId, 'RAG', 'DONE')]
 }
 
 /* ---------------- 진단 템플릿 ---------------- */
@@ -175,35 +197,25 @@ function motorHousingDiagnosis(imgPrefix: string): DiagTemplate {
     {
       agent: 'PCB',
       verdict: 'NORMAL',
-      summary: '이상 없음',
+      summary: '모터 드라이버 회로 정상 · 전기적 원인 가능성 낮음',
       findings: ['모터 드라이버 IC 주변 소손·변색 없음', '커넥터 J4 납땜 상태 정상', '전해 콘덴서 팽창 없음'],
       confidence: 92,
       annotations: [{ imageId: `${imgPrefix}-img-c`, label: '모터 드라이버 IC · 정상', x: 40, y: 37, w: 21, h: 23, severity: 'LOW' }],
-      sourceIds: ['S1', 'S5'],
+      sourceIds: ['S1', 'S4', 'S5'],
       durationSec: 14,
     },
     {
       agent: 'MOTOR',
       verdict: 'ABNORMAL',
-      summary: '하단 연결부 변형 탐지',
+      summary: '하단 연결부 변형 탐지 · 매뉴얼 기준 교체 대상',
       findings: ['하우징 하단 우측 연결부 약 2mm 들뜸', '연결부 주변 균열선 1개 확인', '로터 회전축 정렬 편차 의심'],
       confidence: 89,
       annotations: [
         { imageId: `${imgPrefix}-img-m`, label: '하단 연결부 변형', x: 47, y: 70, w: 15, h: 13, severity: 'HIGH' },
         { imageId: `${imgPrefix}-img-m`, label: '회전축 정렬 확인 필요', x: 53, y: 33, w: 19, h: 25, severity: 'MEDIUM' },
       ],
-      sourceIds: ['S1', 'S5', 'S6'],
+      sourceIds: ['S1', 'S3', 'S5', 'S6'],
       durationSec: 21,
-    },
-    {
-      agent: 'SW',
-      verdict: 'ABNORMAL',
-      summary: '모터 회전 센서 오류 확인',
-      findings: ['E103 발생 직전 8초간 RPM 1,850 → 0 급감', '회전 센서 펄스 누락 37회', '펌웨어 v3.4.2 알려진 결함 아님'],
-      confidence: 84,
-      annotations: [],
-      sourceIds: ['S2', 'S4'],
-      durationSec: 9,
     },
   ]
   return {
@@ -246,10 +258,9 @@ function motorHousingDiagnosis(imgPrefix: string): DiagTemplate {
       },
     ],
     similarCases: [
-      { receiptNo: 'SR-2026-04812', model: 'RC-A100', cause: '모터 하우징 변형', resolution: '모터 어셈블리 교체', similarity: 94, closedAt: isoAgo(60 * 24 * 21) },
-      { receiptNo: 'SR-2026-03377', model: 'RC-A100', cause: '모터 하우징 변형', resolution: '모터 어셈블리 교체', similarity: 91, closedAt: isoAgo(60 * 24 * 40) },
-      { receiptNo: 'SR-2026-02150', model: 'RC-X700', cause: '모터 하우징 균열', resolution: '모터 어셈블리 교체', similarity: 86, closedAt: isoAgo(60 * 24 * 66) },
-      { receiptNo: 'SR-2025-11902', model: 'RC-A100', cause: '회전 센서 커넥터 접촉 불량', resolution: '센서 커넥터 재체결', similarity: 79, closedAt: isoAgo(60 * 24 * 130) },
+      { receiptNo: 'SR-2026-04812', model: 'RC-A100', cause: '하단 연결부 들뜸으로 E103 · 주행 소음', resolution: '모터 어셈블리 교체 후 RPM 정상', similarity: 94, closedAt: isoAgo(60 * 24 * 21) },
+      { receiptNo: 'SR-2026-03377', model: 'RC-A100', cause: '구미 제2공장 3월 생산분 하우징 변형', resolution: '모터 어셈블리 교체 · 동일 로트 점검', similarity: 91, closedAt: isoAgo(60 * 24 * 40) },
+      { receiptNo: 'SR-2026-02150', model: 'RC-X700', cause: '하우징 균열로 회전축 편심', resolution: '모터 어셈블리 교체', similarity: 86, closedAt: isoAgo(60 * 24 * 66) },
     ],
     similarCaseCount: 12,
     inspectionSteps: [
@@ -278,11 +289,14 @@ function wheelSensorDiagnosis(imgPrefix: string): DiagTemplate {
     ],
     agents: t.agents.map((a) =>
       a.agent === 'MOTOR'
-        ? { ...a, verdict: 'NORMAL', summary: '외관 이상 없음', findings: ['하우징 변형 없음', '연결부 체결 정상'], confidence: 81, annotations: [] }
-        : a.agent === 'SW'
-          ? { ...a, verdict: 'SUSPICIOUS', summary: '센서 신호 간헐 누락', confidence: 77 }
-          : a,
+        ? { ...a, verdict: 'SUSPICIOUS', summary: '외관 변형 없음 · 휠 센서 접점 의심', findings: ['하우징 변형 없음', '연결부 체결 정상', '휠 회전 센서 커넥터 접점 마모 흔적'], confidence: 77, annotations: [] }
+        : a,
     ),
+    similarCases: [
+      { receiptNo: 'SR-2025-11902', model: 'RC-A100', cause: '회전 센서 커넥터 접점 마모로 펄스 누락', resolution: '휠 회전 센서 교체', similarity: 88, closedAt: isoAgo(60 * 24 * 130) },
+      { receiptNo: 'SR-2026-01544', model: 'RC-A100', cause: '센서 커넥터 반삽입 · 간헐적 한쪽 회전', resolution: '커넥터 재체결로 해결', similarity: 81, closedAt: isoAgo(60 * 24 * 95) },
+    ],
+    similarCaseCount: 5,
     parts: [{ partId: 'P-221', partName: '휠 회전 센서', partNo: 'RM-SN-221', quantity: 1, reason: '센서 접촉부 마모 시 단품 교체 권장' }],
     repairMethod: ['센서 커넥터 재체결 후 증상 재현 확인', '재현 시 휠 회전 센서(RM-SN-221) 교체'],
   }
@@ -304,15 +318,21 @@ function pcbDiagnosis(imgPrefix: string): DiagTemplate {
         ? {
             ...a,
             verdict: 'ABNORMAL',
-            summary: '전원부 변색·소손 의심',
+            summary: '전원부 변색·소손 의심 · 보드 교체 검토',
             findings: ['전원 IC 주변 변색', '콘덴서 C21 미세 팽창'],
             confidence: 71,
             annotations: [{ imageId: `${imgPrefix}-img-c`, label: '전원부 변색', x: 66, y: 25, w: 15, h: 15, severity: 'HIGH' }],
           }
         : a.agent === 'MOTOR'
-          ? { ...a, verdict: 'NORMAL', summary: '이상 없음', findings: ['외관 정상'], confidence: 88, annotations: [] }
+          ? { ...a, verdict: 'NORMAL', summary: '기계부 이상 없음', findings: ['하우징·연결부 외관 정상', '회전축 정렬 정상'], confidence: 88, annotations: [] }
           : a,
     ),
+    similarCases: [
+      { receiptNo: 'SR-2026-05120', model: 'RC-A100', cause: '전원 IC 주변 소손 · 충전 중 재부팅', resolution: '메인 PCB 교체 · 펌웨어 재설치', similarity: 90, closedAt: isoAgo(60 * 24 * 14) },
+      { receiptNo: 'SR-2026-02981', model: 'RC-X700', cause: '콘덴서 팽창으로 전원 불안정', resolution: '메인 PCB 교체', similarity: 83, closedAt: isoAgo(60 * 24 * 52) },
+      { receiptNo: 'SR-2025-12077', model: 'RC-A100', cause: '배터리 보호회로 동작 (PCB 정상)', resolution: '배터리 팩 교체', similarity: 72, closedAt: isoAgo(60 * 24 * 120) },
+    ],
+    similarCaseCount: 7,
     parts: [{ partId: 'P-310', partName: '메인 PCB', partNo: 'RM-PC-310', quantity: 1, reason: '전원부 소손은 보드 단위 교체' }],
     repairMethod: ['메인 PCB(RM-PC-310) 교체', '펌웨어 최신 버전 재설치'],
   }
@@ -502,6 +522,7 @@ export function createSeed(): MockDbState {
       images: baseImages(`r${s.id}`, s.minutesAgo),
       photoRequestCount: s.photoRequestCount ?? 0,
       stages: stagesFor(status),
+      tools: toolsFor(s.id, status),
       progress: s.diag ? 100 : 0,
       history: history(s),
       report: seedReport(s),
@@ -511,16 +532,22 @@ export function createSeed(): MockDbState {
 
   // 진행 중인 건의 단계 상태를 현실적으로 세팅
   const r102 = repairs.find((r) => r.id === 102)!
-  r102.stages = STAGE_ORDER.map((stage, i) => ({
-    stage,
-    state: i < 3 ? 'DONE' : stage === 'MOTOR_ANALYSIS' ? 'WAITING_INPUT' : 'PENDING',
-    message: stage === 'MOTOR_ANALYSIS' ? '하단 연결부 판독 불가 · 추가 사진 대기' : undefined,
-  }))
+  r102.stages = [
+    { stage: 'QUEUED', state: 'DONE', message: '대기열 등록 완료' },
+    { stage: 'ANALYSIS', state: 'WAITING_INPUT', message: '기계 분석 · 추가 사진 대기' },
+    { stage: 'SYNTHESIS', state: 'PENDING' },
+  ]
+  r102.tools = [tool(102, 'PCB', 'DONE', 'PCB 분석 완료'), tool(102, 'RAG', 'DONE', '유사 사례 12건 · 매뉴얼 3건 확인'), tool(102, 'MOTOR', 'WAITING_INPUT', '하단 연결부 판독 불가 · 추가 사진 대기')]
   r102.progress = 48
   r102.progressMessage = '모터 하단 연결부 추가 사진이 필요합니다.'
 
   const r103 = repairs.find((r) => r.id === 103)!
-  r103.stages = STAGE_ORDER.map((stage, i) => ({ stage, state: i < 2 ? 'DONE' : i === 2 ? 'RUNNING' : 'PENDING' }))
+  r103.stages = [
+    { stage: 'QUEUED', state: 'DONE', message: '대기열 등록 완료' },
+    { stage: 'ANALYSIS', state: 'RUNNING' },
+    { stage: 'SYNTHESIS', state: 'PENDING' },
+  ]
+  r103.tools = [tool(103, 'PCB', 'RUNNING')]
   r103.progress = 25
   r103.progressMessage = 'PCB 사진을 분석하고 있습니다.'
 
@@ -544,7 +571,7 @@ export function createSeed(): MockDbState {
         guide: '연결부가 정면으로 보이도록 촬영해 주세요. 그림자가 지지 않게 측면 조명을 켜고 20cm 거리에서 찍어 주세요.',
         requestNo: 1,
         maxRequests: 3,
-        requestedBy: 'Motor Agent',
+        requestedBy: '기계 분석',
         requestedAt: isoAgo(130),
         resolved: false,
       },
