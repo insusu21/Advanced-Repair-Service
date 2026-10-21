@@ -93,3 +93,43 @@ cd backend && ./gradlew test
 | 22 | [Burnt tantalum capacitor (2)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(2)_(23764576950).jpg) | htomari | CC BY-SA 2.0 |
 | 23 | [Burnt tantalum capacitor (3)](https://commons.wikimedia.org/wiki/File:Burnt_tantalum_capacitor_(3)_(23432016184).jpg) | htomari | CC BY-SA 2.0 |
 | 24 | [OpenRov Circuits électroniques](https://commons.wikimedia.org/wiki/File:OpenRovProjetCh%27tiPlouf2017Circuits_%C3%A9lectroniques.jpg) | Lamiot | CC BY-SA 4.0 |
+
+## LangSmith 실행 추적
+
+`.env`에 다음 값을 설정한 뒤 워커를 재시작한다. API 키는 Git에 올리지 않는다.
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=발급받은_키
+LANGSMITH_PROJECT=repair-agent
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+- 기본값은 비활성화(`false`). 활성화했는데 키가 없으면 명시적인 설정 오류로 처리한다.
+- 진단 이벤트 한 건마다 `repair.diagnosis` 루트 추적을 생성한다. 그 아래 `repair.graph`, 노드, 도구 시도·재시도와 Agent의 LangChain LLM 호출이 연결된다.
+- `thread_id` 메타데이터는 taskId를 사용하므로 추가 자료 제출 전후 실행을 묶어 볼 수 있다. 이것은 관측용 그룹이며 체크포인터 구현이 아니다.
+- 로컬 실행 통계와 JSON의 `execution.trace_id`, Markdown의 실행 추적 항목에서 같은 ID를 확인한다.
+- SDK 클라이언트에서 입력·출력 본문을 숨긴다. 작업 식별자, 단계·도구 이름, 시간, 오류, LLM 사용량 등 실행 메타데이터는 전송한다. 오류 문자열의 완전한 개인정보 제거는 별도 하네스 보완 범위다.
+- Agent가 직접 호출한 LangChain LLM의 토큰 정보는 SDK 자동 추적을 사용한다. 별도 MCP 서버 내부 LLM·임베딩 호출은 이 추적에 포함되지 않는다.
+- 사례 번역의 원문 반환 정책은 그대로 유지된다. 번역 예외를 내부에서 처리하므로 해당 실패가 성공 반환으로 보일 수 있으며 Recovery 단계에서 별도 보완한다.
+
+확인: LangSmith의 `repair-agent` 프로젝트 → `repair.diagnosis` → 그래프·노드·도구 및 LLM 하위 실행을 확인한다.
+실제 서비스 호출을 통한 원격 추적 검증은 유효한 키와 실행 환경이 필요하다.
+
+검증 명령: `.venv/bin/python -m pytest -q`
+공식 문서: https://docs.langchain.com/langsmith/trace-with-langgraph
+
+## 사진 분석 오류와 추가 자료 요청
+
+- 사진 target(PCB/MOTOR)을 기준으로 해당 이미지 MCP만 호출한다. GENERAL은 사진 분류 후 선택한다. 텍스트 단서로 사진 MCP를 강제 호출하지 않는다.
+- Agent에 사진 없는 입력이 전달되면 이미지 MCP를 건너뛰고 소견·RAG 경로로 진행한다. 프론트·Spring의 사진 접수 필수 여부는 변경하지 않았다.
+- 사진 분류/이미지 MCP 오류는 사진별로 기록하고 다른 사진·병렬 분석을 계속한다. 오류 응답을 정상 또는 검출 없음으로 바꾸지 않는다.
+- 이미지 분석 오류가 남으면 다른 사진에서 검출했더라도 추가 자료를 요청한다. 초기 입력 제외 작업 전체 최대 3회이며, 3차 재분석이 성공하면 정상 완료한다. 계속 미해결이면 `INCONCLUSIVE_AFTER_THIRD_PHOTO`로 종료한다.
+- 추가 요청 부위는 PCB/MOTOR/GENERAL로 지정한다. 서버 오류가 사진 문제라는 뜻은 아니며 서비스 복구도 필요할 수 있다는 안내를 포함한다.
+- `PHOTO_REQUESTED`와 최종 미해결 `DIAGNOSIS_FAILED`에 `summary`, `analysisResults`를 추가해 수집 결과·오류 상태를 보존하고 JSON/Markdown으로 저장한다. 기존 이벤트 종류·필수 필드는 유지한다.
+- Spring은 추가 요청의 description을 전달한다. 최종 FAILED 상세 summary/analysisResults는 현재 진단 결과 API·화면에서 표시하지 않으므로 별도 백엔드/프론트 연동이 필요하다. Agent 파일·수신 이벤트에는 남는다.
+- 보조 해석·RAG 오류는 기존대로 근거 제한 안내 후 진행한다. 실행 예산 초과, 잘못된 입력·사진 다운로드/무결성 오류, 리포트 LLM 오류는 기존 실패 처리 정책을 유지한다.
+- 정상 이미지 결과의 충분성 판단은 기존 검출 유무 방식이다. 낮은 확신·근거 충돌을 종합 판단하는 정책은 이번 변경에 포함하지 않았다.
+
+검증: 사진별 오류 격리, 입력별 MCP 선택, 분류 실패, 서로 다른 사진으로 3회 재입력,
+마지막 회차 복구/미해결, 중복 이벤트, JSON 계약 및 리포트 저장을 모의 MCP/LLM으로 테스트했다.

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import config as C
 from .prompts import render
 from .harness import guarded
+from .context_policy import (UsageTracker, masked, prepare_text, prepare_findings, reserve_llm)
 from .tool_policy import check_image_result, check_object, check_response
 
 # ── 1. 사진 ──────────────────────────────────────────────
@@ -41,8 +42,6 @@ async def load_photos(command: dict) -> list[dict]:
             path = folder / f"{a['id']}.jpg"
             path.write_bytes(content)
             photos.append({"attachmentId": a["id"], "path": str(path), "target": a.get("target")})
-    if not photos:
-        raise ValueError("No intake photos supplied")
     return photos
 
 
@@ -87,7 +86,7 @@ async def call_rag_mcp(text: str, pcb_labels: list[str]) -> dict:
     찌그러짐 라벨은 보내지 않는다. RAG는 원본 자동차 라벨을 받아 "자동차라 대응 안 됨" 경고를 붙이는데,
     그 경고가 GPT에 들어가면 결과를 무시해 버린다. 찌그러짐은 기계 MCP 결과로만 리포트에 넣는다.
     """
-    request = {"raw_text": text, "origin": "technician", "technician_confirmed": True,
+    request = {"raw_text": prepare_text(text, "rag_query"), "origin": "technician", "technician_confirmed": True,
                "pcb_labels": pcb_labels, "damage_labels": [], "top_k": 3}
     async with Client(C.RAG_MCP_URL, timeout=60) as c:
         d = check_object(check_response(
@@ -152,7 +151,8 @@ class Report(BaseModel):
 def gpt(schema):
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model=C.GPT_MODEL, temperature=0, timeout=C.TOOL_TIMEOUT, max_retries=0).with_structured_output(schema)
+    return ChatOpenAI(model=C.GPT_MODEL, temperature=0, timeout=C.TOOL_TIMEOUT, max_retries=0,
+                      max_completion_tokens=C.MAX_OUTPUT_TOKENS, callbacks=[UsageTracker()]).with_structured_output(schema)
 
 
 @guarded()
@@ -171,13 +171,16 @@ async def translate_cases(texts: list[str]) -> list[str]:
         return texts
 
 
+@guarded()
 async def classify_photo(path: str) -> str:
     """사진 한 장이 PCB / MECH / OTHER 중 무엇인지."""
     if not C.USE_GPT:
         return "PCB" if "pcb" in Path(path).name else "MECH"  # 키 없을 때: 파일 이름으로
+    prompt = render("classify_photo", PhotoKind)
+    reserve_llm(PhotoKind, prompt, image=True)
     b64 = base64.b64encode(Path(path).read_bytes()).decode()
     msg = [{"role": "user", "content": [
-        {"type": "text", "text": render("classify_photo", PhotoKind)},
+        {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
     ]}]
     return (await gpt(PhotoKind).ainvoke(msg)).kind
@@ -190,7 +193,10 @@ async def split_text(text: str) -> Clues:
         return Clues(pcb=[w for w in ("전원", "충전", "회로") if w in text],
                      mech=[w for w in ("바퀴", "모터", "브러시", "소음") if w in text],
                      sw=[w for w in ("펌웨어", "앱", "업데이트") if w in text])
-    return await gpt(Clues).ainvoke(render("split_text", Clues, text=text))
+    prompt = render("split_text", Clues, text=text)
+    reserve_llm(Clues, prompt)
+    result = await gpt(Clues).ainvoke(prompt)
+    return Clues.model_validate(masked(result.model_dump()))
 
 
 @guarded()
@@ -201,8 +207,15 @@ async def write_report(text: str, findings: list[dict], compatible_parts=None) -
         top = max(defects, key=lambda d: d["confidence"])
         return Report(summary=f"{top['type']} 결함 추정", repairMethod="해당 부품 점검 후 교체",
                       candidates=[Candidate(cause=top["type"], confidence=top["confidence"], explanation="MCP 검출 결과")])
-    result = await gpt(Report).ainvoke(render(
-        "write_report", Report, compatible_parts=compatible_parts or [], text=text, findings=findings))
+    safe_text = prepare_text(text, "report_text")
+    safe_findings, trimmed = prepare_findings(findings)
+    prompt = render("write_report", Report, compatible_parts=masked(compatible_parts or []),
+                    text=safe_text, findings=safe_findings)
+    reserve_llm(Report, prompt)
+    result = await gpt(Report).ainvoke(prompt)
+    result = Report.model_validate(masked(result.model_dump()))
+    if trimmed or safe_text != masked(text):
+        result.summary += "\n\n문맥 제한: 리포트 작성에는 길이를 줄인 입력·도구 근거를 사용했습니다. 원본 사진별 근거를 함께 확인해 주세요."
     allowed = {str(p["id"]) for p in compatible_parts or []}
     identifiers = [p.partId for p in result.recommendedParts]
     if not set(identifiers) <= allowed or len(set(identifiers)) != len(identifiers):

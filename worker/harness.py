@@ -1,6 +1,7 @@
 """원본 그래프 바깥의 실행 한도·재시도·구조화 로그. 진단 판단에는 관여하지 않는다."""
 import asyncio
 from contextvars import ContextVar
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import wraps
 import json
@@ -19,13 +20,15 @@ import httpx2
 from openai import APIConnectionError
 
 from . import config as C
+from . import tracing
+from langsmith import traceable
 
 log = logging.getLogger("worker.harness")
 current = ContextVar("execution_budget", default=None)
 
 
 LIMIT_CODES = frozenset(("EXECUTION_LIMIT", "TOOL_CALL_LIMIT", "TOOL_REPEAT_LIMIT",
-                         "NODE_EXECUTION_LIMIT", "RUN_TIMEOUT"))
+                         "NODE_EXECUTION_LIMIT", "RUN_TIMEOUT", "CONTEXT_LIMIT", "TOKEN_BUDGET_EXCEEDED", "OUTPUT_SIZE_LIMIT"))
 
 
 class LimitExceeded(RuntimeError):
@@ -41,9 +44,14 @@ class ToolCallTimeout(TimeoutError):
 
 
 def validate_limits():
-    for value in (C.MAX_TOOL_CALLS, C.RECURSION_LIMIT, C.MAX_NODE_EXECUTIONS, C.MAX_SAME_INPUT_ATTEMPTS):
+    for value in (C.MAX_TOOL_CALLS, C.RECURSION_LIMIT, C.MAX_NODE_EXECUTIONS, C.MAX_SAME_INPUT_ATTEMPTS,
+                  C.MAX_MCP_RESPONSE_BYTES, C.MAX_EVENT_BYTES, C.MAX_CONTEXT_TOKENS, C.MAX_RUN_TOKENS,
+                  C.MAX_OUTPUT_TOKENS, C.IMAGE_TOKEN_RESERVE):
         if type(value) is not int or value < 1:
             raise ValueError("Execution count limits must be positive integers")
+    for value in (C.OBSERVATION_CONTEXT_BYTES, C.TOOL_CONTEXT_BYTES, C.REPORT_FINDINGS_BYTES):
+        if type(value) is not int or value < 256:
+            raise ValueError("Context byte limits must be at least 256")
     for value in (C.RUN_TIMEOUT, C.TOOL_TIMEOUT):
         if not math.isfinite(value) or value <= 0:
             raise ValueError("Execution time limits must be finite and positive")
@@ -56,6 +64,10 @@ class Budget:
     context: dict = field(default_factory=dict)
     prompt_bundle: dict | None = None
     prompt_versions: dict = field(default_factory=dict)
+    tokens_reserved: int = 0
+    llm_calls: int = 0
+    llm_usage: Counter = field(default_factory=Counter)
+    context_actions: list = field(default_factory=list)
     calls: int = 0
     retries: int = 0
     nodes: int = 0
@@ -114,7 +126,7 @@ def call_identity(fn, args, kwargs, name_arg):
 
 def record(event, **fields):
     budget = current.get()
-    log_event(event, **(budget.context if budget else {}), **fields)
+    log_event(event, **{**(budget.context if budget else {}), **fields})
 
 
 def transient(exc, seen=frozenset()):
@@ -150,7 +162,9 @@ def guarded(weight=1, name_arg=None):
                 record("tool.started", tool=tool, call_id=call_id, attempt=attempt + 1)
                 try:
                     async with asyncio.timeout(C.TOOL_TIMEOUT):
-                        value = await fn(*args, **kwargs)
+                        value = await tracing.tool_attempt(
+                            fn, args, kwargs, langsmith_extra={"name": str(tool),
+                            "metadata": {"attempt": attempt + 1, "call_id": call_id}})
                     record("tool.succeeded", tool=tool, call_id=call_id, duration_ms=round((monotonic()-started)*1000))
                     return value
                 except Exception as exc:
@@ -184,6 +198,13 @@ def observed(fn):
 
 
 async def invoke(graph, command, emit, metrics=None):
+    metadata = {**context(command), "thread_id": str(command["taskId"])}
+    with tracing.execution_context(metadata):
+        return await _invoke(graph, command, emit, metrics)
+
+
+@traceable(name="repair.diagnosis", process_inputs=lambda _: {}, process_outputs=lambda _: {})
+async def _invoke(graph, command, emit, metrics=None):
     validate_limits()
     round_no = command["payload"]["round"]
     if type(round_no) is not int or not 0 <= round_no <= C.MAX_PHOTO_ROUNDS:
@@ -191,7 +212,7 @@ async def invoke(graph, command, emit, metrics=None):
     # 사진 장수는 재요청 횟수와 독립. 사진별 분류·이미지 분석·해석 호출을 계산한다.
     photos = len(command["payload"].get("attachments", []))
     budget = Budget(command["eventId"], min(C.MAX_TOOL_CALLS, max(30, (photos * 5 + 10) * 3)))
-    budget.context = context(command)
+    budget.context = {**context(command), "trace_id": tracing.trace_id()}
     token = current.set(budget)
     deadline = None
     try:
@@ -200,6 +221,8 @@ async def invoke(graph, command, emit, metrics=None):
         async with asyncio.timeout(budget.run_timeout) as deadline:
             return await graph.ainvoke({"command": command},
                                       {"recursion_limit": C.RECURSION_LIMIT,
+                                       "run_name": "repair.graph",
+                                       "metadata": budget.context,
                                        "configurable": {"emit": emit}})
     except TimeoutError:
         # 전체 deadline과 개별 도구 timeout은 구분한다.
@@ -212,12 +235,17 @@ async def invoke(graph, command, emit, metrics=None):
         record("run.limit_exceeded", **hit)
         raise
     finally:
-        values = {"calls": budget.calls, "retries": budget.retries,
+        values = {"trace_id": budget.context["trace_id"], "calls": budget.calls, "retries": budget.retries,
                   "duration_ms": round((monotonic()-budget.started)*1000), "call_limit": budget.call_limit,
                   "prompts": budget.prompt_versions, "node_executions": budget.nodes,
                   "nodes": budget.node_counts, "tool_attempts": budget.attempts_by_tool,
                   "max_same_input_attempts_used": max(budget.attempts_by_input.values(), default=0),
                   "limits_hit": budget.limits_hit,
+                  "context_actions": budget.context_actions,
+                  "llm": {"calls": budget.llm_calls, "tokens_reserved": budget.tokens_reserved,
+                          "actual_usage": dict(budget.llm_usage), "run_token_limit": C.MAX_RUN_TOKENS,
+                          "per_call_context_limit": C.MAX_CONTEXT_TOKENS, "output_token_limit": C.MAX_OUTPUT_TOKENS,
+                          "scope": "agent-direct-only; text UTF-8 upper bound; images estimated; MCP-internal excluded"},
                   "limits": {"same_input_attempts": budget.repeat_limit, "node_executions": budget.node_limit,
                              "graph_super_steps": C.RECURSION_LIMIT, "run_seconds": budget.run_timeout,
                              "tool_seconds": C.TOOL_TIMEOUT, "weighted_calls": budget.call_limit}}
