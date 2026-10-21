@@ -40,7 +40,7 @@ SPRING_PROFILES_ACTIVE=dev DB_URL=jdbc:postgresql://localhost:5434/repair KAFKA_
   ./gradlew bootRun --args='--app.mock-ai.enabled=false'
 
 cd agent-server   # 터미널 2 (기계 MCP 9104, Rag_mcp 8011~8014 먼저)
-KAFKA_BOOTSTRAP_SERVERS=localhost:9096 SPRING_BASE_URL=http://localhost:8080 \
+DEMO_FORCE_PHOTO=1 KAFKA_BOOTSTRAP_SERVERS=localhost:9096 SPRING_BASE_URL=http://localhost:8080 \
   PCB_MCP_SCRIPT=../../MCP_Error_check/pcb_agent/mcp_server.py PCB_MCP_PYTHON=../../MCP_Error_check/pcb_agent/.venv/bin/python \
   env -u OPENAI_API_KEY uv run --env-file ../../.env python -m worker.main
 
