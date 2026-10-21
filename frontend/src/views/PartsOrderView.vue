@@ -97,7 +97,7 @@ async function decide(o: PurchaseOrder, p: { action: 'APPROVE' | 'REJECT'; comme
               <td><strong>{{ o.partName }}</strong><div class="mono faint">{{ o.partNo }}</div></td>
               <td>{{ o.quantity }}개</td>
               <td>{{ o.fromWarehouse }}</td>
-              <td><RouterLink :to="`/repairs/${o.repairId}/parts`" class="mono">{{ repairId(o.repairId) }}</RouterLink></td>
+              <td><RouterLink :to="`/repairs/${o.repairId}/diagnosis?page=2`" class="mono">{{ repairId(o.repairId) }}</RouterLink></td>
               <td>{{ o.requestedBy ?? '-' }}<div class="faint">{{ formatDateTime(o.requestedAt) }}</div></td>
               <td><span class="badge" :class="`tone-${ORDER_STATUS_META[o.status].tone}`">{{ ORDER_STATUS_META[o.status].label }}</span></td>
               <td>

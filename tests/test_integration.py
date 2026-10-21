@@ -95,12 +95,13 @@ def test_dent_labels_preserve_six_and_never_invent_part():
 
 
 def test_typed_dent_reaches_interpreter(fixture_tools):
-    tools.call_mech_mcp.return_value = {**fixture_tools, "defects": [{"type": "roof-dent", "confidence": .7}]}
+    # [통합] 새 Rag_mcp는 표면 결함 라벨을 받는다
+    tools.call_mech_mcp.return_value = {**fixture_tools, "defects": [{"type": "scratches", "confidence": .7}]}
     cmd = command()
     cmd["payload"]["attachments"][0]["target"] = "MOTOR"
     result = asyncio.run(graph.build_graph().ainvoke({"command": cmd},
                          {"configurable": {"emit": AsyncMock()}}))
-    enrichment.interpret_damage.assert_awaited_once_with([{"damage_type": "dent", "part": "roof"}])
+    enrichment.interpret_damage.assert_awaited_once_with(["scratches"])
     assert result["result"]["eventType"] == "DIAGNOSIS_COMPLETED"
 
 

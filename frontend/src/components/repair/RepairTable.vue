@@ -2,7 +2,6 @@
 import { useRouter } from 'vue-router'
 import { ChevronRight, Camera } from 'lucide-vue-next'
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
-import { URGENCY_META } from '@/constants/status'
 import type { Repair, Role } from '@/types'
 import { formatDateTime, repairId } from '@/utils/format'
 import { nextAction, repairLink } from '@/utils/repairFlow'
@@ -32,7 +31,6 @@ const open = (r: Repair) => router.push(repairLink(r, props.role))
         <tr v-for="r in items" :key="r.id" class="clickable" tabindex="0" @click="open(r)" @keydown.enter="open(r)">
           <td>
             <span class="mono rno">{{ repairId(r.id) }}</span>
-            <span v-if="r.urgency === 'HIGH'" class="badge tone-danger urg">{{ URGENCY_META.HIGH.label }}</span>
           </td>
           <td class="mono">{{ r.product.serialNumber }}</td>
           <td>
@@ -61,11 +59,6 @@ const open = (r: Repair) => router.push(repairLink(r, props.role))
   font-weight: 700;
   color: var(--navy-700);
   white-space: nowrap;
-}
-.urg {
-  margin-left: 6px;
-  font-size: var(--fs-xs);
-  padding: 1px 7px;
 }
 .sym {
   max-width: 240px;

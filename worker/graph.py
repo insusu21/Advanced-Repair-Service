@@ -115,10 +115,8 @@ async def run_photo_mcp(state, config, kind: str, call, tool: str, agent_type: s
             findings.append(await supplemental(config, "interpret_pcb", "pcb-mcp",
                                                 lambda: enrichment.interpret_pcb(labels)))
     else:
-        # 일반 결함명은 유지하고, 모델이 반환한 원래 부위 라벨로 추가 해석한다.
-        labels = [label for f in findings for label in enrichment.dent_labels(f["output"])]
-        labels = [{"damage_type": kind, "part": part}
-                  for kind, part in dict.fromkeys((v["damage_type"], v["part"]) for v in labels)]
+        # [통합] 표면 결함 라벨(crazing 등)을 그대로 해석에 보낸다. 새 Rag_mcp는 옛 dent/부위 형식을 미등록으로 둔다
+        labels = sorted({label for f in findings for label in enrichment.surface_labels(f["output"])})
         if labels:
             findings.append(await supplemental(config, "interpret_damage", "damage-mcp",
                                                 lambda: enrichment.interpret_damage(labels)))
@@ -142,8 +140,11 @@ async def rag_mcp(state: State, config) -> dict:
     text = state["text"] + (f" 에러코드 {', '.join(codes)}" if codes else "")
     pcb_labels = sorted({d["type"] for f in state.get("findings", []) if f["source"] == "PCB"
                          for d in f["output"].get("defects", [])})
+    # [통합] 기계 MCP 표면 결함도 RAG 검색에 넘긴다 (새 Rag_mcp가 지원)
+    damage_labels = sorted({label for f in state.get("findings", []) if f["source"] == "MECH"
+                            for label in enrichment.surface_labels(f["output"])})
     try:
-        out = check_object(await tools.call_rag_mcp(text, pcb_labels), "retrieve_repair_context")
+        out = check_object(await tools.call_rag_mcp(text, pcb_labels, damage_labels), "retrieve_repair_context")
     except LimitExceeded:
         raise
     except Exception as e:  # 보조 검색 실패는 기록하고 리포트에도 누락을 명시한다.

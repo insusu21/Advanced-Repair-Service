@@ -1,35 +1,46 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { confidenceLevel } from '@/utils/format'
+/* AI 판단 점수 막대 — 고장 확률이 아니라 원인 후보끼리 비교한 점수(0~100)
+ * 높음·보통·낮음 같은 등급이나 기준선은 두지 않고, 후보 간 순위 비교로만 쓴다. */
+import { computed, useId } from 'vue'
+import { Info } from 'lucide-vue-next'
+import { SCORE_HINT } from '@/constants/status'
 
-const props = withDefaults(defineProps<{ value: number; label?: string; size?: 'sm' | 'md' | 'lg'; showLevel?: boolean }>(), {
-  size: 'md',
-  showLevel: true,
-})
-const level = computed(() => confidenceLevel(props.value))
+const props = withDefaults(
+  defineProps<{
+    value: number
+    label?: string
+    size?: 'sm' | 'md' | 'lg'
+    /** 안내 문구 표시 방식: line(막대 아래 한 줄) · icon(ⓘ 툴팁) · none. 기본: sm 은 icon, 나머지는 line */
+    hint?: 'line' | 'icon' | 'none'
+  }>(),
+  { label: 'AI 판단 점수', size: 'md', hint: undefined },
+)
+const hintMode = computed(() => props.hint ?? (props.size === 'sm' ? 'icon' : 'line'))
+const score = computed(() => Math.round(Math.max(0, Math.min(100, props.value))))
+const hintId = `${useId()}-hint`
 </script>
 
 <template>
   <div class="conf" :class="size">
     <div class="top">
-      <span v-if="label" class="lbl">{{ label }}</span>
-      <span class="val">
-        <strong>{{ Math.round(value) }}%</strong>
-        <span v-if="showLevel" class="lvl" :class="`t-${level.tone}`">신뢰도 {{ level.label }}</span>
+      <span class="lbl">
+        {{ label }}
+        <span v-if="hintMode === 'icon'" class="info" :title="SCORE_HINT" tabindex="0" :aria-label="SCORE_HINT"><Info :size="13" aria-hidden="true" /></span>
       </span>
+      <span class="val"><strong>{{ score }}</strong><small>점</small></span>
     </div>
     <div
       class="track"
       role="meter"
-      :aria-valuenow="Math.round(value)"
+      :aria-valuenow="score"
       aria-valuemin="0"
       aria-valuemax="100"
-      :aria-label="`${label ?? 'AI 신뢰도'} ${Math.round(value)}%`"
+      :aria-label="`${label} ${score}점`"
+      :aria-describedby="hintMode === 'line' ? hintId : undefined"
     >
-      <div class="fill" :class="`f-${level.tone}`" :style="{ width: `${Math.max(2, Math.min(100, value))}%` }" />
-      <span class="tick" style="left: 60%" aria-hidden="true" />
-      <span class="tick" style="left: 80%" aria-hidden="true" />
+      <div class="fill" :style="{ width: `${Math.max(2, score)}%` }" />
     </div>
+    <p v-if="hintMode === 'line'" :id="hintId" class="hint">{{ SCORE_HINT }}</p>
   </div>
 </template>
 
@@ -46,32 +57,36 @@ const level = computed(() => confidenceLevel(props.value))
   gap: 8px;
 }
 .lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 600;
+}
+.info {
+  display: inline-flex;
+  color: var(--text-3);
+  cursor: help;
+  border-radius: 50%;
+}
+.info:focus-visible {
+  outline: 2px solid var(--navy-600);
+  outline-offset: 2px;
 }
 .val {
   display: inline-flex;
-  gap: 8px;
+  gap: 2px;
   align-items: baseline;
 }
 .val strong {
   font-size: 1.05em;
 }
+.val small {
+  color: var(--text-2);
+  font-weight: 600;
+}
 .lg .val strong {
   font-size: var(--fs-2xl);
   line-height: 1;
-}
-.lvl {
-  font-size: var(--fs-xs);
-  font-weight: 700;
-}
-.t-success {
-  color: var(--success);
-}
-.t-warning {
-  color: var(--warning);
-}
-.t-danger {
-  color: var(--danger);
 }
 .track {
   position: relative;
@@ -86,24 +101,21 @@ const level = computed(() => confidenceLevel(props.value))
 .lg .track {
   height: 14px;
 }
+/* 등급 색 없이 AI 색 하나로만 (점수 높낮이로 좋고 나쁨을 암시하지 않음) */
 .fill {
   height: 100%;
   border-radius: 999px;
   background: var(--ai);
   transition: width 0.6s ease;
 }
-/* 신뢰도는 AI 수치이므로 보라를 기본으로, 낮을 때만 경고색 */
-.f-warning {
-  background: #c27a1a;
+.hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
-.f-danger {
-  background: var(--danger);
-}
-.tick {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: rgba(255, 255, 255, 0.9);
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
 }
 </style>

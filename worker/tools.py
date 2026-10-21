@@ -81,14 +81,13 @@ async def call_pcb_mcp(path: str) -> dict:
 
 
 @guarded()
-async def call_rag_mcp(text: str, pcb_labels: list[str]) -> dict:
+async def call_rag_mcp(text: str, pcb_labels: list[str], damage_labels: list[str] = ()) -> dict:
     """Rag_mcp(retrieve_repair_context): 증상 글 + PCB 라벨로 과거 수리 사례·라벨 정의를 찾는다.
 
-    찌그러짐 라벨은 보내지 않는다. RAG는 원본 자동차 라벨을 받아 "자동차라 대응 안 됨" 경고를 붙이는데,
-    그 경고가 GPT에 들어가면 결과를 무시해 버린다. 찌그러짐은 기계 MCP 결과로만 리포트에 넣는다.
+    [통합] 10/21부터 기계 MCP 표면 결함 6종도 보낸다. 찌그러짐(자동차 라벨)은 여전히 보내지 않는다.
     """
     request = {"raw_text": text, "origin": "technician", "technician_confirmed": True,
-               "pcb_labels": pcb_labels, "damage_labels": [], "top_k": 3}
+               "pcb_labels": pcb_labels, "damage_labels": list(damage_labels), "top_k": 3}  # [통합] 표면 결함 라벨 전달
     async with Client(C.RAG_MCP_URL, timeout=60) as c:
         d = check_object(check_response(
             await c.call_tool("retrieve_repair_context", {"request": request}),
@@ -96,7 +95,9 @@ async def call_rag_mcp(text: str, pcb_labels: list[str]) -> dict:
     # [통합] score 추가: RAG가 주는 similarity_score를 버려서 화면 유사도가 0%로 나왔다
     hits = [{"kind": "CASE", "citation": x["source_id"], "sourceUri": x["source_url"], "score": x.get("similarity_score", 0),
              "excerpt": (x.get("korean_summary") or x.get("chunk_text") or "")[:300]} for x in d["repair_cases"]]
-    hits += [{"kind": "LABEL", "citation": x["document_id"], "excerpt": x["title"]} for x in d["label_definitions"]]
+    # [통합] 표면 결함 라벨 정의는 title 없이 name_ko만 온다 (10/21 Rag_mcp). title만 읽으면 KeyError로 사례가 다 빠진다
+    hits += [{"kind": "LABEL", "citation": x["document_id"], "excerpt": x.get("title") or x.get("name_ko") or x.get("label", "")}
+             for x in d["label_definitions"]]
     hits += [{"kind": "REFERENCE", "citation": x["document_id"],
               "excerpt": (x.get("text") or x.get("chunk_text") or x.get("title") or "")[:2000],
               **({"sourceUri": x["source_url"]} if x.get("source_url") else {})}

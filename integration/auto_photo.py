@@ -5,7 +5,7 @@
   2) POST /api/repairs/{id}/attachments?requestId=..&target=PCB|MOTOR   (지정 사진 업로드)
   3) POST /api/repairs/{id}/diagnosis/resume  {requestId, submissionKey, attachmentIds}
 
-실행: DEV_PASSWORD가 있는 셸에서 python3 integration/auto_photo.py  (Ctrl+C로 종료)
+실행: python3 integration/auto_photo.py  (Ctrl+C로 종료, 로그인 비밀번호는 LOGIN_PASSWORD, 기본 1234)
 요청 후 AUTO_PHOTO_GRACE초(기본 60) 동안은 기다린다. 그 안에 프론트에서 올리면 대역은 넘어간다.
 지정 사진: integration/designated/{PCB,MOTOR}.jpg  (GENERAL 요청이면 둘 다 올린다)
 """

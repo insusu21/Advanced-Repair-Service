@@ -12,7 +12,7 @@ import {
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AiAcceptance, AnalysisStage, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, Urgency, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
+import type { AiAcceptance, AnalysisStage, AnalysisToolKind, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -66,34 +66,26 @@ export const STATUS_GROUPS: { key: StatusGroupKey; label: string; statuses: Repa
 export const IN_PROGRESS_STATUSES: RepairStatus[] = ['RECEIVED', 'QUEUED', 'ANALYZING', 'ADDITIONAL_INFO_NEEDED']
 
 export const STAGE_META: Record<AnalysisStage, { label: string; agent: string; description: string }> = {
-  QUEUED: { label: '접수·대기열 등록', agent: 'System', description: '분석 요청을 대기열에 등록합니다' },
-  ORCHESTRATION: { label: '분석 계획 수립', agent: 'Orchestrator AI', description: '증상·에러코드로 필요한 분석을 선택합니다' },
-  PCB_ANALYSIS: { label: 'PCB 분석', agent: 'PCB Agent', description: 'PCB 사진의 소손·부식·납땜 불량을 확인합니다' },
-  MOTOR_ANALYSIS: { label: '모터 분석', agent: 'Motor Agent', description: '모터 외관 변형·이물·연결부 상태를 확인합니다' },
-  SW_ANALYSIS: { label: 'SW·로그 분석', agent: 'SW Agent', description: '에러 코드와 센서 로그를 해석합니다' },
-  SIMILAR_CASE_SEARCH: { label: '유사 사례 검색', agent: 'Case Agent', description: '사내 고장 DB 에서 유사 수리 건을 찾습니다' },
-  SYNTHESIS: { label: '결과 종합', agent: 'Orchestrator AI', description: '각 Agent 결과를 종합해 원인 후보를 만듭니다' },
+  QUEUED: { label: '접수·대기열', agent: 'System', description: '분석 요청을 대기열에 등록합니다' },
+  ANALYSIS: { label: '분석 진행', agent: 'AI 분석', description: '필요한 분석 도구가 실행되는 대로 아래에 추가됩니다' },
+  SYNTHESIS: { label: '결과 종합', agent: 'AI 종합', description: '분석 결과를 모아 원인 후보와 판단 점수를 정리합니다' },
 }
 
-export const STAGE_ORDER: AnalysisStage[] = [
-  'QUEUED',
-  'ORCHESTRATION',
-  'PCB_ANALYSIS',
-  'MOTOR_ANALYSIS',
-  'SW_ANALYSIS',
-  'SIMILAR_CASE_SEARCH',
-  'SYNTHESIS',
-]
+export const STAGE_ORDER: AnalysisStage[] = ['QUEUED', 'ANALYSIS', 'SYNTHESIS']
+
+/** 분석 도구 표시 이름 (실서버 agentType 매핑: PCB → PCB 분석, MOTOR → 기계 분석, RAG → 매뉴얼·유사 사례 검색, 그 외 → 도구 이름) */
+export const TOOL_KIND_LABEL: Record<Exclude<AnalysisToolKind, 'OTHER'>, string> = {
+  PCB: 'PCB 분석',
+  MOTOR: '기계 분석',
+  RAG: '매뉴얼·유사 사례 검색',
+}
+
+/** 판단 점수 안내 — 확률이 아니라 후보끼리 비교한 점수 */
+export const SCORE_HINT = '고장 확률이 아니라 AI가 후보를 비교한 점수입니다'
 
 export const ROLE_LABEL: Record<Role, string> = {
   TECHNICIAN: '서비스센터 기사',
   QUALITY_MANAGER: '본사 품질 담당자',
-}
-
-export const URGENCY_META: Record<Urgency, { label: string; tone: Tone }> = {
-  HIGH: { label: '긴급', tone: 'danger' },
-  MEDIUM: { label: '보통', tone: 'warning' },
-  LOW: { label: '낮음', tone: 'neutral' },
 }
 
 export const ORDER_STATUS_META: Record<OrderStatus, { label: string; tone: Tone }> = {
