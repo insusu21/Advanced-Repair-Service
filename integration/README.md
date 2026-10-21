@@ -59,7 +59,7 @@ python3 integration/demo.py photo  # 터미널 4: complete | photo (같은 셸�
 | 파일 | 대상 | 내용 |
 |---|---|---|
 | `backend-0001-사진target저장.patch` | backend (박시현) | 접수 `POST /api/repairs?targets=PCB&targets=MECHANICAL`, 추가 사진 `?target=`. DB 규칙에 맞게 MECHANICAL → MOTOR로 저장. 없으면 기존처럼 GENERAL |
-| `agent-server-v2-0001-.patch` | agent-server (홍은비 `feat/harness-hardening` 위) | 점수순, 화면 필드(박스·유사사례), 진행 단계 |
+| `agent-server-v2-0001·0002` | agent-server (홍은비 `feat/harness-hardening` 위) | 점수순, 화면 필드(박스·유사사례), 진행 단계, 사례 한국어·유사도 |
 | `backend-0002-API.patch` | backend | 진단 확인·반려 API `POST /api/repairs/{id}/approval` 추가 |
 | `frontend-0002-API.patch` | frontend | 진단 확인 연결, 쓸모없는 버튼 삭제, 수정 이유 주석 |
 | `frontend-0004-.patch` | frontend | 에이전트 단계 이름 매핑 |
