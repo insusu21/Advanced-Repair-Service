@@ -62,7 +62,7 @@ export interface ApprovalRequest {
 /** POST /api/repairs/{id}/reanalysis */
 export interface ReanalysisRequest {
   reason: string
-  scope?: ('PCB' | 'MOTOR' | 'SW')[]
+  scope?: ('PCB' | 'MOTOR')[]
 }
 
 /** PUT /api/repairs/{id}/report — 리포트 초안 저장

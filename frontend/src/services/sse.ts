@@ -18,6 +18,8 @@ export const REPAIR_EVENT_NAMES = [
   'DIAGNOSIS_QUEUED',
   'DIAGNOSIS_STARTED',
   'DIAGNOSIS_PROGRESS',
+  /** 분석 도구 하나가 실행·완료됨 → /diagnosis/tools 재조회 */
+  'TOOL_EXECUTED',
   'PHOTO_REQUESTED',
   'DIAGNOSIS_RESUMED',
   'DIAGNOSIS_COMPLETED',

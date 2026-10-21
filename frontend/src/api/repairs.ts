@@ -4,12 +4,12 @@ import { ApiError, http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
 import { partApi } from './parts'
 import { STATUS_GROUPS } from '@/constants/status'
-import { latestTask, toPhotoRequest, toProductInfo, toRepair, toRepairDetail } from './adapters/repair'
+import { latestTask, toPhotoRequest, toProductInfo, toRepair, toRepairDetail, toTools } from './adapters/repair'
 import { toBeContent, toRepairReport } from './adapters/report'
 import { toDiagnosis } from './adapters/diagnosis'
 import { toBeRepairStatus } from './adapters/status'
 import type { BeAccepted, BeProduct, BeReport, BeRepairDetail, BeRepairPage, BeTask, BeToolExecution, BeUploaded } from './adapters/types'
-import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
+import type { AnalysisToolRun, Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
   AdditionalInfoRequest,
   ApprovalRequest,
@@ -47,10 +47,17 @@ async function fetchReport(id: number): Promise<BeReport | null> {
     throw e
   }
 }
+/** GET /api/repairs/{id}/diagnosis/tools — 진단 전이거나 없으면 빈 배열 */
+const fetchTools = (id: number) =>
+  http
+    .get<BeToolExecution[]>(`/repairs/${id}/diagnosis/tools`)
+    .then((r) => r.data)
+    .catch(() => [] as BeToolExecution[])
+
 async function realGet(id: number, fresh = false): Promise<Repair> {
-  const d = await fetchDetail(id, fresh)
+  const [d, execs] = await Promise.all([fetchDetail(id, fresh), fetchTools(id)])
   const report = d.reports?.length ? await fetchReport(id) : null
-  return toRepairDetail(d, report ? toRepairReport(report) : undefined)
+  return toRepairDetail(d, report ? toRepairReport(report) : undefined, toTools(execs))
 }
 
 /** 목록 요약 카운트 (화면 상단 카드) */
@@ -167,6 +174,12 @@ export const repairApi = {
     throw notSupported('단계별 접수')
   },
 
+  /** '분석 진행' 단계의 실행 도구 목록 — 실서버: GET /api/repairs/{id}/diagnosis/tools (TOOL_EXECUTED 수신 시 재조회) */
+  async tools(id: number): Promise<AnalysisToolRun[]> {
+    if (USE_MOCK) return mockDelay(() => mock.getRepair(id).tools ?? [], 100)
+    return toTools(await fetchTools(id))
+  },
+
   /** 추가 사진 요청 — 실서버는 상세(photoRequests)에서 꺼냄 */
   async photoRequests(id: number): Promise<PhotoRequest[]> {
     if (USE_MOCK) return mockDelay(() => mock.getPhotoRequests(id), 200)
@@ -205,10 +218,7 @@ export const repairApi = {
         .get<BeTask>(`/repairs/${id}/diagnosis`)
         .then((r) => r.data)
         .catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))),
-      http
-        .get<BeToolExecution[]>(`/repairs/${id}/diagnosis/tools`)
-        .then((r) => r.data)
-        .catch(() => [] as BeToolExecution[]),
+      fetchTools(id),
       partApi.list().catch(() => []),
       fetchDetail(id),
     ])

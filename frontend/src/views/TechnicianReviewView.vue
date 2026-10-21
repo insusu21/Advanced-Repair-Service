@@ -323,7 +323,7 @@ const faultText = (c: ReportContent) =>
               <label for="cause-sel" class="req">원인 선택</label>
               <select id="cause-sel" v-model="form.causeCandidate" class="select" :class="{ invalid: errOf('cause') }">
                 <option value="" disabled>원인을 선택하세요</option>
-                <option v-for="c in diagnosis.candidates" :key="c.rank" :value="c.cause">{{ c.rank }}순위 · {{ c.cause }} (AI {{ c.confidence }}%)</option>
+                <option v-for="c in diagnosis.candidates" :key="c.rank" :value="c.cause">{{ c.rank }}순위 · {{ c.cause }} (AI 판단 점수 {{ c.confidence }}점)</option>
               </select>
             </div>
             <div v-else class="field">
@@ -422,11 +422,11 @@ const faultText = (c: ReportContent) =>
             <AiBadge label="참고용 AI 진단 (확정 아님)" />
             <p class="faint">v{{ diagnosis.version }} · {{ formatDateTime(diagnosis.generatedAt) }}</p>
             <h3>{{ diagnosis.topCause }}</h3>
-            <ConfidenceBar :value="diagnosis.confidence" label="AI 신뢰도" />
+            <ConfidenceBar :value="diagnosis.confidence" size="sm" />
             <div>
               <p class="lbl">원인 후보</p>
               <ol class="mini">
-                <li v-for="c in diagnosis.candidates" :key="c.rank">{{ c.cause }} <span class="faint">{{ c.confidence }}%</span></li>
+                <li v-for="c in diagnosis.candidates" :key="c.rank">{{ c.cause }} <span class="faint">{{ c.confidence }}점</span></li>
               </ol>
             </div>
             <div>

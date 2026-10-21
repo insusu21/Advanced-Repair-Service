@@ -3,8 +3,8 @@
 import type { AgentResult, AgentType, AgentVerdict, DataSource, Decision, Diagnosis, ImageAnnotation, Part, Urgency } from '@/types'
 import type { BeAgent, BeCandidate, BeEvidence, BeSimilarCase, BeTask, BeToolExecution } from './types'
 
-/** 0~1 이면 % 로, 이미 0~100 이면 그대로 */
-const pct = (v: number) => Math.round(v <= 1 ? v * 100 : v)
+/** 백엔드·AI 서버 confidence 는 0~1 → 화면 'AI 판단 점수' 0~100 (확률이 아니라 후보 비교 점수) */
+const pct = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100)
 
 /** "1. 커넥터 재체결\n2. 교체" 같은 문자열 → 단계 배열 */
 export function splitSteps(s: string | undefined): string[] {
@@ -41,12 +41,11 @@ function toAnnotation(e: BeEvidence): ImageAnnotation | null {
   return { imageId: e.attachmentId, label: String(a.label ?? e.citation ?? '이상 영역'), x, y, w, h, severity: sev === 'HIGH' || sev === 'LOW' ? sev : 'MEDIUM' }
 }
 
-/** agent_type 문자열에서 PCB/MOTOR/SW 추출 (예: "pcb_agent", "MOTOR") */
+/** agent_type → 부위별 분석 카드 (PCB · 기계(MOTOR)). RAG·소견 정리 등 그 외 도구는 카드로 만들지 않는다 */
 function agentOf(t: string): AgentType | null {
   const u = t.toUpperCase()
   if (u.includes('PCB')) return 'PCB'
-  if (u.includes('MOTOR')) return 'MOTOR'
-  if (u.includes('SW') || u.includes('SOFTWARE') || u.includes('LOG')) return 'SW'
+  if (u.includes('MOTOR') || u.includes('MECH')) return 'MOTOR'
   return null
 }
 
@@ -152,8 +151,11 @@ export function toDiagnosis(
     inspectionSteps: res?.inspectionSteps ?? [],
     repairMethod: res?.repairSteps?.length ? res.repairSteps : splitSteps(res?.repairMethod),
     parts: recommended.map((p) => {
-      const part = ctx.parts.find((x) => x.id === p.partId)
-      return { partId: p.partId, partName: part?.name ?? `부품 #${p.partId}`, partNo: part?.partNo ?? '-', quantity: p.quantity, reason: res?.summary ?? '' }
+      // [통합] task.recommendedParts는 백엔드 테이블 행이라 part_id(snake_case)로 온다 → '부품 #undefined'가 떴다
+      const partId = String(p.partId ?? (p as unknown as Record<string, unknown>).part_id ?? '')
+      const part = ctx.parts.find((x) => String(x.id) === partId)
+      // [통합] 에이전트는 부품별 이유를 주지 않는다. 리포트 요약을 넣으면 부품마다 같은 긴 글이 반복돼 비운다
+      return { partId, partName: part?.name ?? `부품 #${partId}`, partNo: part?.partNo ?? '-', quantity: p.quantity, reason: '' }
     }),
     sources,
     technicianDecision: ctx.decision,

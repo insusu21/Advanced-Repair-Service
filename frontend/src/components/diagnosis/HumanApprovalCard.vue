@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* =========================================================================
  * HumanApprovalCard — 모든 승인 영역이 공유하는 단일 컴포넌트
- * 반드시 표시: AI 제안 내용 · 판단 근거 · 신뢰도 · 데이터 출처 · 승인 · 반려 ·
+ * 반드시 표시: AI 제안 내용 · 판단 근거 · AI 판단 점수 · 데이터 출처 · 승인 · 반려 ·
  *            수정 의견 입력 · 재분석 요청 · 승인자와 승인 시각
  * 사용처: 진단 확인(기사) / 수리 결과 승인(본사) / 발주 승인(본사 품질 담당자)
  * ========================================================================= */
@@ -98,7 +98,7 @@ const btnClass = (v: ApprovalAction['variant']) => ({ success: 'btn-success', da
             <li v-for="e in evidence" :key="e">{{ e }}</li>
           </ul>
         </div>
-        <ConfidenceBar v-if="confidence !== undefined" :value="confidence" label="신뢰도" />
+        <ConfidenceBar v-if="confidence !== undefined" :value="confidence" />
         <div>
           <p class="lbl">데이터 출처</p>
           <DataSourceList :sources="sources" :ids="sourceIds" />

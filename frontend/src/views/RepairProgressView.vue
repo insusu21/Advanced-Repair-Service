@@ -26,6 +26,8 @@ const toast = useToastStore()
 const router = useRouter()
 const dlg = useReasonDialog<'reanalyze' | 'hq'>()
 
+// '현재 실행 중' = 실행 중인 도구(없으면 실행 중인 고정 단계)
+const runningTool = computed(() => repair.value?.tools?.find((t) => t.state === 'RUNNING'))
 const running = computed(() => repair.value?.stages.find((s) => s.state === 'RUNNING'))
 const done = computed(() => !!repair.value && ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED'].includes(repair.value.status))
 const failed = computed(() => !!repair.value?.analysisError)
@@ -93,8 +95,9 @@ async function confirmDialog() {
           <p class="msg">{{ repair.progressMessage ?? '분석을 준비하고 있습니다.' }}</p>
           <strong class="pct">{{ repair.progress }}%</strong>
         </div>
-        <p v-if="running" class="now">
-          <span class="pulse" aria-hidden="true" /> 현재 실행 중: <b>{{ STAGE_META[running.stage].label }}</b> · {{ STAGE_META[running.stage].agent }}
+        <p v-if="runningTool || running" class="now">
+          <span class="pulse" aria-hidden="true" /> 현재 실행 중:
+          <b>{{ runningTool ? runningTool.label : STAGE_META[running!.stage].label }}</b>
         </p>
       </section>
 
@@ -103,7 +106,7 @@ async function confirmDialog() {
         <Sparkles :size="24" />
         <div class="grow">
           <strong>AI 진단 초안이 준비되었습니다.</strong>
-          AI 결과는 자동으로 확정되지 않습니다. 원인 · 근거 · 신뢰도를 확인하고 처리해 주세요.
+          AI 결과는 자동으로 확정되지 않습니다. 원인 · 근거 · AI 판단 점수를 확인하고 처리해 주세요.
         </div>
         <button class="btn btn-primary btn-lg" type="button" @click="router.push(`/repairs/${repair.id}/diagnosis`)">진단 결과 확인 <ArrowRight :size="20" /></button>
       </div>
@@ -134,7 +137,7 @@ async function confirmDialog() {
       <div class="cols">
         <section class="card">
           <div class="card-head"><h3><Activity :size="20" /> 단계별 진행</h3></div>
-          <div class="card-body"><RepairProgressTimeline :stages="repair.stages" /></div>
+          <div class="card-body"><RepairProgressTimeline :stages="repair.stages" :tools="repair.tools" /></div>
         </section>
         <div class="stack">
           <section class="card">
