@@ -213,7 +213,7 @@ export function uploadAdditionalImages(id: number, req: AdditionalInfoRequest): 
   log(r, { target: 'PHOTO', action: 'PHOTO_ADDED', actor: u.name, actorRole: 'TECHNICIAN', comment: `${what} 제출 (${pending?.target ?? '추가'})${note ? `\n설명: ${note}` : ''}` })
   // 데모: 추가 사진 등록 후 정상 진행
   r.mockScenario = 'NORMAL'
-  restartAnalysis(r, 'MOTOR_ANALYSIS')
+  restartAnalysis(r, 'ANALYSIS')
   return r
 }
 

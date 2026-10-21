@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* 원인 후보 순위 + 각 후보의 신뢰도 · 판단 근거 · 데이터 출처 */
+/* 원인 후보 순위 + 각 후보의 AI 판단 점수 · 판단 근거 · 데이터 출처 */
 import { ListOrdered } from 'lucide-vue-next'
 import AiBadge from '@/components/common/AiBadge.vue'
 import ConfidenceBar from '@/components/common/ConfidenceBar.vue'
@@ -25,7 +25,7 @@ defineProps<{ candidates: CauseCandidate[]; sources: DataSource[]; bare?: boolea
               <strong class="cause">{{ c.cause }}</strong>
               <span v-if="c.part" class="faint"> · 관련 부품: {{ c.part }}</span>
             </div>
-            <ConfidenceBar :value="c.confidence" class="cb" />
+            <ConfidenceBar :value="c.confidence" label="" size="sm" class="cb" />
           </div>
           <div class="ev">
             <span class="evl">판단 근거</span>

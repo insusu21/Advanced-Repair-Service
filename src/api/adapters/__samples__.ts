@@ -8,7 +8,7 @@
  * 앱 코드에서는 import 하지 않는다 (번들에 포함되지 않음).
  * ========================================================================= */
 import { toRepairStatus, toBeRepairStatus } from './status'
-import { toProductInfo, toRepair, toRepairDetail, toPhotoRequest } from './repair'
+import { toProductInfo, toRepair, toRepairDetail, toPhotoRequest, toStages, toTools } from './repair'
 import { toDiagnosis, splitSteps } from './diagnosis'
 import { toRepairReport, toBeContent } from './report'
 import { toPart, toPurchaseOrders, toOrderItem, toProcurementDrafts } from './parts'
@@ -54,7 +54,7 @@ export const SAMPLE_TASK: BeTask = {
   status: 'WAITING_INPUT',
   input_revision: 1,
   photo_request_count: 1,
-  stage: 'MOTOR_ANALYSIS',
+  stage: 'image_inspect',
   error_code: null,
   error_message: null,
   result: {
@@ -91,9 +91,13 @@ export const SAMPLE_DETAIL: BeRepairDetail = {
   orders: [],
 }
 
+// 도착 순서: 기계 → PCB → RAG → 기타(소견 정리). 기계 분석은 재시도 1회 (마지막 실행만 남아야 함)
 export const SAMPLE_TOOLS: BeToolExecution[] = [
+  { id: '0', job_id: '1', agent_type: 'MOTOR_AGENT', tool_name: 'image_inspect', model_version: null, status: 'FAILED', output_payload: null, error_message: 'timeout', started_at: '2026-10-20T08:59:50Z', finished_at: '2026-10-20T08:59:55Z' },
   { id: '1', job_id: '1', agent_type: 'MOTOR_AGENT', tool_name: 'image_inspect', model_version: null, status: 'SUCCEEDED', output_payload: { verdict: 'ABNORMAL', summary: '하우징 변형', confidence: 0.87 }, error_message: null, started_at: T, finished_at: '2026-10-20T09:00:12Z' },
-  { id: '2', job_id: '1', agent_type: 'pcb_agent', tool_name: 'image_inspect', model_version: null, status: 'SUCCEEDED', output_payload: { verdict: 'NORMAL' }, error_message: null, started_at: T, finished_at: T },
+  { id: '2', job_id: '1', agent_type: 'pcb_agent', tool_name: 'image_inspect', model_version: null, status: 'SUCCEEDED', output_payload: { verdict: 'NORMAL' }, error_message: null, started_at: '2026-10-20T09:00:01Z', finished_at: '2026-10-20T09:00:05Z' },
+  { id: '3', job_id: '1', agent_type: 'RAG', tool_name: 'manual_search', model_version: null, status: 'RUNNING', output_payload: null, error_message: null, started_at: '2026-10-20T09:00:02Z', finished_at: null },
+  { id: '4', job_id: '1', agent_type: 'OPINION', tool_name: '소견 정리', model_version: null, status: 'PENDING', output_payload: null, error_message: null, started_at: '2026-10-20T09:00:03Z', finished_at: null },
 ]
 
 // API.md: 초안 version=0→1/revision=1, 확정 → version=2, 수정 초안 version=3/revision=2 에서도 confirmed_revision=1 유지
@@ -167,6 +171,13 @@ export const sampleStatus = () => ({
 export const sampleProduct = () => toProductInfo(SAMPLE_PRODUCT)
 export const sampleRepair = () => toRepair(SAMPLE_REPAIR)
 export const sampleRepairDetail = () => toRepairDetail(SAMPLE_DETAIL)
+export const sampleTools = () => toTools(SAMPLE_TOOLS)
+export const sampleStages = () => ({
+  queued: toStages({ ...SAMPLE_TASK, status: 'QUEUED' }),
+  running: toStages({ ...SAMPLE_TASK, status: 'RUNNING' }),
+  synth: toStages({ ...SAMPLE_TASK, status: 'RUNNING', stage: 'SYNTHESIS' }),
+  done: toStages({ ...SAMPLE_TASK, status: 'SUCCEEDED' }),
+})
 export const samplePhotoRequest = () => toPhotoRequest(SAMPLE_DETAIL.photoRequests[0])
 export const sampleDiagnosis = () => toDiagnosis(SAMPLE_TASK, { parts: parts(), tools: SAMPLE_TOOLS, urgency: 'HIGH', decision: { state: 'PENDING' } })
 export const sampleReport = () => toRepairReport(SAMPLE_REPORT)
@@ -208,14 +219,23 @@ export function runAllSamples(): boolean {
   const d = sampleRepairDetail()
   ok('상세 상태 WAITING_INPUT → ADDITIONAL_INFO_NEEDED', d.status === 'ADDITIONAL_INFO_NEEDED')
   ok('사진 종류 photoKinds 순서 + 추가 사진', d.images.map((i) => i.kind).join() === 'PCB,MECHANICAL,ADDITIONAL')
-  ok('진행 단계 MOTOR_ANALYSIS 대기', d.stages.find((s) => s.stage === 'MOTOR_ANALYSIS')?.state === 'WAITING_INPUT')
+  ok('3단계: 분석 진행 추가 사진 대기', d.stages.map((s) => s.stage).join() === 'QUEUED,ANALYSIS,SYNTHESIS' && d.stages[1].state === 'WAITING_INPUT')
+  const sg = sampleStages()
+  ok('작업 QUEUED → 접수·대기열 진행 중', sg.queued.stages[0].state === 'RUNNING' && sg.queued.stages[1].state === 'PENDING')
+  ok('작업 RUNNING → 분석 진행 중', sg.running.stages.map((s) => s.state).join() === 'DONE,RUNNING,PENDING')
+  ok('작업 RUNNING + 종합 단계 → 결과 종합 중', sg.synth.stages.map((s) => s.state).join() === 'DONE,DONE,RUNNING')
+  ok('작업 완료 → 3단계 모두 DONE', sg.done.stages.every((s) => s.state === 'DONE') && sg.done.progress === 100)
+  const tl = sampleTools()
+  ok('도구: 도착 순서·재시도 합침', tl.map((t) => t.kind).join() === 'MOTOR,PCB,RAG,OTHER')
+  ok('도구 라벨 매핑', tl.map((t) => t.label).join() === '기계 분석,PCB 분석,매뉴얼·유사 사례 검색,소견 정리')
+  ok('도구 상태 (재시도 마지막 결과)', tl.map((t) => t.state).join() === 'DONE,DONE,RUNNING,PENDING')
   ok('추가 사진 요청 round_no → requestNo', samplePhotoRequest().requestNo === 1 && samplePhotoRequest().target === 'wheel')
 
   const dg = sampleDiagnosis()!
-  ok('진단 1순위 정렬·신뢰도 %', dg.topCause === '모터 하우징 변형' && dg.confidence === 87)
+  ok('진단 1순위 정렬·판단 점수 0~1 → ×100', dg.topCause === '모터 하우징 변형' && dg.confidence === 87 && dg.candidates[1].confidence === 21)
   ok('수리 방법 문자열 → 단계', dg.repairMethod.length === 2 && splitSteps('a\nb').length === 2)
   ok('권장 부품 이름 연결', dg.parts[0]?.partName === '모터 어셈블리')
-  ok('Agent 매핑 (MOTOR·PCB)', dg.agents.map((a) => a.agent).sort().join() === 'MOTOR,PCB' && dg.agents.find((a) => a.agent === 'MOTOR')?.verdict === 'ABNORMAL')
+  ok('Agent 카드는 PCB·기계만 (RAG·기타 제외)', dg.agents.map((a) => a.agent).sort().join() === 'MOTOR,PCB' && dg.agents.find((a) => a.agent === 'MOTOR')?.verdict === 'ABNORMAL')
   ok('없는 필드는 빈 배열', !dg.errorCodes.length && !dg.similarCases.length && !dg.inspectionSteps.length)
 
   const rep = sampleReport()

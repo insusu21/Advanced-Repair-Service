@@ -75,6 +75,12 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
         s.message = e.message
       }
     }
+    // 분석 도구: 같은 id 면 갱신, 처음 오면 도착 순서대로 뒤에 추가
+    if (e.tool) {
+      const tools = r.tools ?? []
+      const i = tools.findIndex((t) => t.id === e.tool!.id)
+      r.tools = i >= 0 ? tools.map((t, j) => (j === i ? e.tool! : t)) : [...tools, e.tool]
+    }
     if (e.stageState === 'FAILED') r.analysisError = e.message
     // 분석 완료 이벤트 → 새 AI 초안 조회
     if (e.status === 'DIAGNOSIS_COMPLETED' && e.progress === 100) void loadDiagnosis(r.id)
@@ -88,7 +94,17 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
   const DIAGNOSIS_EVENTS: RepairEventName[] = ['DIAGNOSIS_COMPLETED', 'DIAGNOSIS_FAILED', 'DIAGNOSIS_RESUMED']
   let refetchTimer: number | undefined
   let refetchDiagnosis = false
+  let toolsTimer: number | undefined
   function onServerChange(id: number, name: RepairEventName) {
+    // 도구 실행 이벤트는 도구 목록만 다시 받는다 (GET /diagnosis/tools)
+    if (name === 'TOOL_EXECUTED') {
+      window.clearTimeout(toolsTimer)
+      toolsTimer = window.setTimeout(async () => {
+        const tools = await repairApi.tools(id).catch(() => null)
+        if (tools && repair.value?.id === id) repair.value = { ...repair.value, tools }
+      }, 300)
+      return
+    }
     if (DIAGNOSIS_EVENTS.includes(name)) refetchDiagnosis = true
     window.clearTimeout(refetchTimer)
     refetchTimer = window.setTimeout(async () => {
@@ -109,6 +125,7 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
   }
   function unsubscribe() {
     window.clearTimeout(refetchTimer)
+    window.clearTimeout(toolsTimer)
     conn?.close()
     conn = null
   }

@@ -6,6 +6,7 @@
 import type {
   AgentResult,
   AnalysisStageState,
+  AnalysisToolRun,
   ApprovalRecord,
   DataSource,
   Diagnosis,
@@ -20,7 +21,8 @@ import type {
   Urgency,
   User,
 } from '@/types'
-import { STAGE_ORDER } from '@/constants/status'
+import { STAGE_ORDER, TOOL_KIND_LABEL } from '@/constants/status'
+import { ERROR_MESSAGES } from '@/constants/errors'
 import { isoAgo } from '@/utils/format'
 
 /* ---------------- 사용자 ---------------- */
@@ -159,12 +161,32 @@ function baseImages(prefix: string, minutesAgo: number): RepairImage[] {
 }
 
 /* ---------------- 단계 상태 ---------------- */
-export function stagesFor(status: RepairStatus, skipSw = false): AnalysisStageState[] {
-  const done = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW'].includes(status)
+const ANALYZED: RepairStatus[] = ['DIAGNOSIS_COMPLETED', 'TECHNICIAN_REVIEW', 'APPROVED', 'REJECTED', 'CLOSED', 'MANUAL_REVIEW']
+
+/** 고정 3단계 상태. 분석이 끝난 건은 모두 DONE (수동 검토 전환 건은 분석 진행이 FAILED) */
+export function stagesFor(status: RepairStatus): AnalysisStageState[] {
+  const done = ANALYZED.includes(status)
   return STAGE_ORDER.map((stage) => ({
     stage,
-    state: done ? (stage === 'SW_ANALYSIS' && skipSw ? 'SKIPPED' : 'DONE') : 'PENDING',
+    state: !done ? 'PENDING' : status === 'MANUAL_REVIEW' && stage !== 'QUEUED' ? (stage === 'ANALYSIS' ? 'FAILED' : 'PENDING') : 'DONE',
   }))
+}
+
+const tool = (repairId: number, kind: 'PCB' | 'MOTOR' | 'RAG', state: AnalysisToolRun['state'], message?: string): AnalysisToolRun => ({
+  id: `${repairId}-${kind}`,
+  kind,
+  label: TOOL_KIND_LABEL[kind],
+  state,
+  message,
+})
+
+/** 분석이 끝난 건의 실행 도구 목록 (도착 순서) */
+export function toolsFor(repairId: number, status: RepairStatus): AnalysisToolRun[] {
+  if (!ANALYZED.includes(status)) return []
+  if (status === 'MANUAL_REVIEW') {
+    return [tool(repairId, 'PCB', 'DONE'), tool(repairId, 'RAG', 'DONE'), tool(repairId, 'MOTOR', 'FAILED', ERROR_MESSAGES.INCONCLUSIVE_AFTER_THIRD_PHOTO)]
+  }
+  return [tool(repairId, 'PCB', 'DONE'), tool(repairId, 'MOTOR', 'DONE'), tool(repairId, 'RAG', 'DONE')]
 }
 
 /* ---------------- 진단 템플릿 ---------------- */
@@ -194,16 +216,6 @@ function motorHousingDiagnosis(imgPrefix: string): DiagTemplate {
       ],
       sourceIds: ['S1', 'S5', 'S6'],
       durationSec: 21,
-    },
-    {
-      agent: 'SW',
-      verdict: 'ABNORMAL',
-      summary: '모터 회전 센서 오류 확인',
-      findings: ['E103 발생 직전 8초간 RPM 1,850 → 0 급감', '회전 센서 펄스 누락 37회', '펌웨어 v3.4.2 알려진 결함 아님'],
-      confidence: 84,
-      annotations: [],
-      sourceIds: ['S2', 'S4'],
-      durationSec: 9,
     },
   ]
   return {
@@ -278,10 +290,8 @@ function wheelSensorDiagnosis(imgPrefix: string): DiagTemplate {
     ],
     agents: t.agents.map((a) =>
       a.agent === 'MOTOR'
-        ? { ...a, verdict: 'NORMAL', summary: '외관 이상 없음', findings: ['하우징 변형 없음', '연결부 체결 정상'], confidence: 81, annotations: [] }
-        : a.agent === 'SW'
-          ? { ...a, verdict: 'SUSPICIOUS', summary: '센서 신호 간헐 누락', confidence: 77 }
-          : a,
+        ? { ...a, verdict: 'SUSPICIOUS', summary: '외관 변형 없음 · 휠 센서 접점 의심', findings: ['하우징 변형 없음', '연결부 체결 정상', '휠 회전 센서 커넥터 접점 마모 흔적'], confidence: 77, annotations: [] }
+        : a,
     ),
     parts: [{ partId: 'P-221', partName: '휠 회전 센서', partNo: 'RM-SN-221', quantity: 1, reason: '센서 접촉부 마모 시 단품 교체 권장' }],
     repairMethod: ['센서 커넥터 재체결 후 증상 재현 확인', '재현 시 휠 회전 센서(RM-SN-221) 교체'],
@@ -502,6 +512,7 @@ export function createSeed(): MockDbState {
       images: baseImages(`r${s.id}`, s.minutesAgo),
       photoRequestCount: s.photoRequestCount ?? 0,
       stages: stagesFor(status),
+      tools: toolsFor(s.id, status),
       progress: s.diag ? 100 : 0,
       history: history(s),
       report: seedReport(s),
@@ -511,16 +522,22 @@ export function createSeed(): MockDbState {
 
   // 진행 중인 건의 단계 상태를 현실적으로 세팅
   const r102 = repairs.find((r) => r.id === 102)!
-  r102.stages = STAGE_ORDER.map((stage, i) => ({
-    stage,
-    state: i < 3 ? 'DONE' : stage === 'MOTOR_ANALYSIS' ? 'WAITING_INPUT' : 'PENDING',
-    message: stage === 'MOTOR_ANALYSIS' ? '하단 연결부 판독 불가 · 추가 사진 대기' : undefined,
-  }))
+  r102.stages = [
+    { stage: 'QUEUED', state: 'DONE', message: '대기열 등록 완료' },
+    { stage: 'ANALYSIS', state: 'WAITING_INPUT', message: '기계 분석 · 추가 사진 대기' },
+    { stage: 'SYNTHESIS', state: 'PENDING' },
+  ]
+  r102.tools = [tool(102, 'PCB', 'DONE', 'PCB 분석 완료'), tool(102, 'RAG', 'DONE', '유사 사례 12건 · 매뉴얼 3건 확인'), tool(102, 'MOTOR', 'WAITING_INPUT', '하단 연결부 판독 불가 · 추가 사진 대기')]
   r102.progress = 48
   r102.progressMessage = '모터 하단 연결부 추가 사진이 필요합니다.'
 
   const r103 = repairs.find((r) => r.id === 103)!
-  r103.stages = STAGE_ORDER.map((stage, i) => ({ stage, state: i < 2 ? 'DONE' : i === 2 ? 'RUNNING' : 'PENDING' }))
+  r103.stages = [
+    { stage: 'QUEUED', state: 'DONE', message: '대기열 등록 완료' },
+    { stage: 'ANALYSIS', state: 'RUNNING' },
+    { stage: 'SYNTHESIS', state: 'PENDING' },
+  ]
+  r103.tools = [tool(103, 'PCB', 'RUNNING')]
   r103.progress = 25
   r103.progressMessage = 'PCB 사진을 분석하고 있습니다.'
 
@@ -544,7 +561,7 @@ export function createSeed(): MockDbState {
         guide: '연결부가 정면으로 보이도록 촬영해 주세요. 그림자가 지지 않게 측면 조명을 켜고 20cm 거리에서 찍어 주세요.',
         requestNo: 1,
         maxRequests: 3,
-        requestedBy: 'Motor Agent',
+        requestedBy: '기계 분석',
         requestedAt: isoAgo(130),
         resolved: false,
       },

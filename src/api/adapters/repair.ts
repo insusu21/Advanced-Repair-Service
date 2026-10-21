@@ -1,9 +1,9 @@
 /* 제품 · 접수(목록·상세) · 첨부 · 추가 사진 요청 변환 */
 import { API_BASE } from '@/api/http'
-import { STAGE_ORDER } from '@/constants/status'
-import type { AnalysisStage, AnalysisStageState, PhotoKind, PhotoRequest, ProductInfo, Repair, RepairImage, RepairReport, Urgency } from '@/types'
+import { TOOL_KIND_LABEL } from '@/constants/status'
+import type { AnalysisStageState, AnalysisToolKind, AnalysisToolRun, PhotoKind, PhotoRequest, ProductInfo, Repair, RepairImage, RepairReport, StageRunState, Urgency } from '@/types'
 import { toRepairStatus } from './status'
-import type { BeAttachment, BePhotoRequest, BeProduct, BeRepair, BeRepairDetail, BeTask } from './types'
+import type { BeAttachment, BePhotoRequest, BeProduct, BeRepair, BeRepairDetail, BeTask, BeToolExecution } from './types'
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
 
@@ -51,22 +51,71 @@ export function latestTask(tasks: BeTask[] | undefined): BeTask | undefined {
   return [...(tasks ?? [])].sort((a, b) => Number(b.id) - Number(a.id))[0]
 }
 
-/** 진단 작업 → 진행 단계 표시. 백엔드 stage 가 프론트 단계 이름과 같으면 그 위치를 쓰고, 아니면 상태로 추정 */
-function toStages(task: BeTask | undefined): { stages: AnalysisStageState[]; progress: number } {
-  if (!task) return { stages: STAGE_ORDER.map((stage) => ({ stage, state: 'PENDING' })), progress: 0 }
-  const stage = (task.stage ?? '').toUpperCase() as AnalysisStage
-  const known = STAGE_ORDER.indexOf(stage)
-  const cur = known >= 0 ? known : task.status === 'QUEUED' ? 0 : 1
-  if (task.status === 'SUCCEEDED') return { stages: STAGE_ORDER.map((s) => ({ stage: s, state: 'DONE' })), progress: 100 }
-  const curState = task.status === 'FAILED' ? 'FAILED' : task.status === 'WAITING_INPUT' ? 'WAITING_INPUT' : 'RUNNING'
-  return {
-    stages: STAGE_ORDER.map((s, i) => ({
-      stage: s,
-      state: i < cur ? 'DONE' : i === cur ? curState : 'PENDING',
-      message: i === cur ? (task.error_message ?? undefined) : undefined,
-    })),
-    progress: Math.round((cur / STAGE_ORDER.length) * 100),
+/** 진단 작업 → 고정 3단계 (접수·대기열 → 분석 진행 → 결과 종합) */
+export function toStages(task: BeTask | undefined): { stages: AnalysisStageState[]; progress: number } {
+  const st = (q: StageRunState, a: StageRunState, s: StageRunState, msg?: string): AnalysisStageState[] => [
+    { stage: 'QUEUED', state: q },
+    { stage: 'ANALYSIS', state: a, message: msg },
+    { stage: 'SYNTHESIS', state: s },
+  ]
+  if (!task) return { stages: st('PENDING', 'PENDING', 'PENDING'), progress: 0 }
+  const synth = /SYNTH|SUMMAR|AGGREG|FINAL/i.test(task.stage ?? '')
+  switch (task.status) {
+    case 'QUEUED':
+      return { stages: st('RUNNING', 'PENDING', 'PENDING'), progress: 5 }
+    case 'RUNNING':
+      return synth ? { stages: st('DONE', 'DONE', 'RUNNING'), progress: 90 } : { stages: st('DONE', 'RUNNING', 'PENDING'), progress: 40 }
+    case 'WAITING_INPUT':
+      return { stages: st('DONE', 'WAITING_INPUT', 'PENDING', '추가 사진 대기'), progress: 50 }
+    case 'SUCCEEDED':
+      return { stages: st('DONE', 'DONE', 'DONE'), progress: 100 }
+    case 'FAILED':
+      return { stages: st('DONE', 'FAILED', 'PENDING', task.error_message ?? task.error_code ?? undefined), progress: 50 }
+    default:
+      return { stages: st('DONE', 'PENDING', 'PENDING'), progress: 0 }
   }
+}
+
+/** 도구 실행 상태 문자열 → 화면 상태 */
+function toToolState(s: string): StageRunState {
+  const u = s.toUpperCase()
+  if (/SUCC|DONE|COMPLET|OK/.test(u)) return 'DONE'
+  if (/FAIL|ERROR/.test(u)) return 'FAILED'
+  if (/WAIT/.test(u)) return 'WAITING_INPUT'
+  if (/SKIP|CANCEL/.test(u)) return 'SKIPPED'
+  if (/RUN|START|PROGRESS/.test(u)) return 'RUNNING'
+  return 'PENDING'
+}
+
+/** agentType → 도구 종류 (PCB · MOTOR · RAG, 그 외 OTHER) */
+function toToolKind(agentType: string): AnalysisToolKind {
+  const u = agentType.toUpperCase()
+  if (u.includes('PCB')) return 'PCB'
+  if (u.includes('MOTOR') || u.includes('MECH')) return 'MOTOR'
+  if (u.includes('RAG')) return 'RAG'
+  return 'OTHER'
+}
+
+/** GET /api/repairs/{id}/diagnosis/tools → '분석 진행' 도구 목록 (도착 순서). 같은 agent·tool 의 재시도는 마지막 실행 하나로 */
+export function toTools(execs: BeToolExecution[]): AnalysisToolRun[] {
+  const sorted = [...execs].sort((a, b) => a.started_at.localeCompare(b.started_at) || Number(a.id) - Number(b.id))
+  const byKey = new Map<string, AnalysisToolRun>()
+  for (const e of sorted) {
+    const kind = toToolKind(e.agent_type)
+    const key = `${e.agent_type}:${e.tool_name}`
+    const prev = byKey.get(key)
+    byKey.set(key, {
+      id: key,
+      kind,
+      label: kind === 'OTHER' ? e.tool_name : TOOL_KIND_LABEL[kind],
+      state: toToolState(e.status),
+      message: e.error_message ?? undefined,
+      // 처음 도착한 시각을 유지해 목록 순서가 재시도로 바뀌지 않게
+      startedAt: prev?.startedAt ?? e.started_at,
+      finishedAt: e.finished_at ?? undefined,
+    })
+  }
+  return [...byKey.values()]
 }
 
 /** 첨부 URL — 같은 origin 세션 쿠키로 GET /api/attachments/{id} */
@@ -99,7 +148,7 @@ export function toPhotoRequest(p: BePhotoRequest): PhotoRequest {
 }
 
 /** 목록 항목 → Repair (상세 전용 필드는 비움) */
-export function toRepair(r: BeRepair, extra: { task?: BeTask; images?: RepairImage[]; report?: RepairReport } = {}): Repair {
+export function toRepair(r: BeRepair, extra: { task?: BeTask; images?: RepairImage[]; report?: RepairReport; tools?: AnalysisToolRun[] } = {}): Repair {
   const ui = userInput(r)
   const { stages, progress } = toStages(extra.task)
   return {
@@ -119,6 +168,7 @@ export function toRepair(r: BeRepair, extra: { task?: BeTask; images?: RepairIma
     images: extra.images ?? [],
     photoRequestCount: extra.task?.photo_request_count ?? 0,
     stages,
+    tools: extra.tools,
     progress,
     progressMessage: extra.task?.stage ?? undefined,
     analysisError: extra.task?.status === 'FAILED' ? (extra.task.error_message ?? extra.task.error_code ?? 'AI 분석에 실패했습니다.') : undefined,
@@ -128,7 +178,7 @@ export function toRepair(r: BeRepair, extra: { task?: BeTask; images?: RepairIma
 }
 
 /** 상세 → Repair (리포트 본문은 GET /report 로 따로 받아 넘김) */
-export function toRepairDetail(d: BeRepairDetail, report?: RepairReport): Repair {
+export function toRepairDetail(d: BeRepairDetail, report?: RepairReport, tools?: AnalysisToolRun[]): Repair {
   const task = latestTask(d.tasks)
-  return toRepair(d, { task, images: toImages(d.attachments ?? [], userInput(d).photoKinds, d.photoRequests), report })
+  return toRepair(d, { task, images: toImages(d.attachments ?? [], userInput(d).photoKinds, d.photoRequests), report, tools })
 }

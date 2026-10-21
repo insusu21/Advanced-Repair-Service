@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* =========================================================================
  * AI 진단 결과 화면 (서비스 핵심 화면) — '핵심 요약 + 펼쳐 보기'
- *  상단: 한눈에 보기(원인·신뢰도·긴급도·승인 상태·권장 조치·필요 부품·판단 근거) + 처리 버튼
+ *  상단: 한눈에 보기(원인·AI 판단 점수·긴급도·승인 상태·권장 조치·필요 부품·판단 근거) + 처리 버튼
  *  세부: 접이식 섹션 — 원인 후보 · 부위별 분석 · 사진 이상 영역 · 에러코드 · 점검/수리 방법·부품 ·
  *        유사 사례 · 데이터 출처 · 처리 이력 (명세서 항목이라 삭제하지 않고 접어 둔다)
  *  처리: 진단 내용 확인 / 추가 분석 요청 / 진단 반려 + 더 보기(수정 의견 작성 / 본사 검토 요청)
@@ -145,7 +145,7 @@ onBeforeUnmount(() => {
 })
 
 /* ---------- 요약 데이터 ---------- */
-const agentOrder = { MOTOR: 0, PCB: 1, SW: 2 }
+const agentOrder = { MOTOR: 0, PCB: 1 }
 const agents = computed(() => [...(diagnosis.value?.agents ?? [])].sort((a, b) => agentOrder[a.agent] - agentOrder[b.agent]))
 const cases = computed(() => (showAllCases.value ? diagnosis.value?.similarCases : diagnosis.value?.similarCases.slice(0, 3)) ?? [])
 
@@ -176,7 +176,8 @@ const summaries = computed(() => {
   const steps = [d.inspectionSteps.length && `점검 ${d.inspectionSteps.length}단계`, d.repairMethod.length && `수리 ${d.repairMethod.length}단계`].filter(Boolean)
   const last = repair.value?.history[repair.value.history.length - 1]
   return {
-    candidates: d.candidates.map((c) => `${c.confidence}%`).join(' · '),
+    // 판단 점수는 확률이 아니라 후보끼리 비교한 점수
+    candidates: d.candidates.map((c) => `${c.confidence}점`).join(' · '),
     agents: (Object.keys(VERDICT_WORD) as (keyof typeof VERDICT_WORD)[]).filter((k) => v(k)).map((k) => `${VERDICT_WORD[k]} ${v(k)}`).join(' · '),
     images: `표시 ${annotationCount.value}곳`,
     codes: d.errorCodes.map((e) => e.code).join(', '),
@@ -273,7 +274,7 @@ const summaries = computed(() => {
             <DiagnosisEvidenceCard :candidates="diagnosis.candidates" :sources="diagnosis.sources" bare />
           </CollapsibleSection>
 
-          <CollapsibleSection v-if="agents.length" id="agents" title="부위별 분석 (PCB · 기계 · SW)" :summary="summaries.agents" :icon="Cpu">
+          <CollapsibleSection v-if="agents.length" id="agents" title="부위별 분석 (PCB · 기계)" :summary="summaries.agents" :icon="Cpu">
             <div class="agents">
               <AgentAnalysisCard v-for="a in agents" :key="a.agent" :result="a" :images="repair.images" :sources="diagnosis.sources" hide-image />
             </div>
@@ -362,7 +363,7 @@ const summaries = computed(() => {
               <h4 class="sub-h">이전 진단 버전 ({{ versions.length - 1 }})</h4>
               <ul>
                 <li v-for="v in versions.slice(0, -1).reverse()" :key="v.id" class="row between">
-                  <span><b>v{{ v.version }}</b> · {{ v.topCause }} ({{ v.confidence }}%)</span>
+                  <span><b>v{{ v.version }}</b> · {{ v.topCause }} (판단 점수 {{ v.confidence }}점)</span>
                   <span class="faint">{{ v.technicianDecision.state === 'REANALYSIS_REQUESTED' ? `재분석 요청: ${v.technicianDecision.comment}` : v.technicianDecision.state }}</span>
                 </li>
               </ul>
@@ -377,7 +378,7 @@ const summaries = computed(() => {
     <BaseModal :open="dlg.open" :title="ACTIONS[dlg.key].label" :width="560" @close="dlg.open = false">
       <div class="stack">
         <p class="muted">{{ ACTIONS[dlg.key].hint }}</p>
-        <p v-if="diagnosis" class="dlg-sugg"><b>AI 제안</b> {{ diagnosis.topCause }} ({{ diagnosis.confidence }}%)<template v-if="diagnosis.repairMethod[0]"> → {{ diagnosis.repairMethod[0] }}</template></p>
+        <p v-if="diagnosis" class="dlg-sugg"><b>AI 제안</b> {{ diagnosis.topCause }} (판단 점수 {{ diagnosis.confidence }}점)<template v-if="diagnosis.repairMethod[0]"> → {{ diagnosis.repairMethod[0] }}</template></p>
         <div class="field">
           <label for="dlg-text" :class="{ req: ACTIONS[dlg.key].needsReason }">{{ ACTIONS[dlg.key].reasonLabel }}</label>
           <textarea id="dlg-text" v-model="dlg.text" class="textarea" :class="{ invalid: dlg.error }" :placeholder="ACTIONS[dlg.key].placeholder" maxlength="1000" :aria-invalid="!!dlg.error" @input="dlg.error = ''" />

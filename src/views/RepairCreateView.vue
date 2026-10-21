@@ -23,7 +23,6 @@ const form = reactive({
   product: null as ProductInfo | null,
   symptom: '',
   errorCodes: [] as string[],
-  noErrorCode: false,
   urgency: 'MEDIUM' as Urgency,
   technicianNote: '',
 })
@@ -75,19 +74,18 @@ function addCode(c?: string) {
     return
   }
   if (!form.errorCodes.includes(v)) form.errorCodes.push(v)
-  form.noErrorCode = false
   codeInput.value = ''
 }
 function addSymptom(s: string) {
   form.symptom = form.symptom.trim() ? `${form.symptom.trim()}, ${s}` : s
 }
-watch(() => form.noErrorCode, (v) => v && (form.errorCodes = []))
 
 /* ---------- 검증 ---------- */
 const errs = computed(() => ({
   product: !form.product ? '시리얼 번호로 제품 정보를 조회해 주세요.' : null,
   symptom: form.symptom.trim().length < 5 ? '고장 증상을 5자 이상 입력해 주세요.' : null,
-  codes: !form.noErrorCode && !form.errorCodes.length ? '에러 코드를 추가하거나 "에러 코드 없음"을 선택해 주세요.' : null,
+  // 에러 코드는 선택. 입력란에 쓰고 [추가]를 안 누른 코드만 확인
+  codes: codeInput.value.trim() ? '입력한 에러 코드를 [추가]로 등록하거나 지워 주세요.' : null,
   photos: PHOTO_KINDS.filter((k) => !photos[k].length),
   photoTotal: totalPhotos.value > PHOTO_LIMIT.total ? `사진은 전체 ${PHOTO_LIMIT.total}장까지 등록할 수 있습니다. (현재 ${totalPhotos.value}장)` : null,
   note: form.technicianNote.length > 1000 ? '기사 소견은 1000자까지 입력할 수 있습니다.' : null,
@@ -240,14 +238,15 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
       </div>
 
       <div class="field">
-        <label for="code" :class="{ req: !form.noErrorCode }">에러 코드</label>
+        <label for="code">에러 코드 <span class="faint">(선택)</span></label>
+        <p class="help">제품에 표시된 코드가 있으면 추가해 주세요. 없으면 비워 두고 다음 단계로 넘어가도 됩니다.</p>
         <div class="row nowrap">
-          <input id="code" v-model="codeInput" class="input mono" placeholder="E103" maxlength="4" :disabled="form.noErrorCode" @keydown.enter.prevent="addCode()" />
-          <button type="button" class="btn btn-lg" :disabled="form.noErrorCode" @click="addCode()">추가</button>
+          <input id="code" v-model="codeInput" class="input mono" placeholder="E103" maxlength="4" @keydown.enter.prevent="addCode()" />
+          <button type="button" class="btn btn-lg" @click="addCode()">추가</button>
         </div>
         <div class="quick">
           <span class="faint">자주 나오는 코드</span>
-          <button v-for="c in COMMON_CODES" :key="c" type="button" class="btn btn-sm mono" :disabled="form.noErrorCode || form.errorCodes.includes(c)" @click="addCode(c)">{{ c }}</button>
+          <button v-for="c in COMMON_CODES" :key="c" type="button" class="btn btn-sm mono" :disabled="form.errorCodes.includes(c)" @click="addCode(c)">{{ c }}</button>
         </div>
         <div v-if="form.errorCodes.length" class="codes" aria-label="입력한 에러 코드">
           <span v-for="c in form.errorCodes" :key="c" class="badge tone-info code">
@@ -255,10 +254,6 @@ onBeforeRouteLeave(() => (!dirty.value || submit.phase === 'done' ? true : windo
             <button type="button" :aria-label="`${c} 삭제`" @click="form.errorCodes = form.errorCodes.filter((x) => x !== c)"><X :size="14" /></button>
           </span>
         </div>
-        <label class="check">
-          <input v-model="form.noErrorCode" type="checkbox" />
-          에러 코드 없음 (표시되지 않음)
-        </label>
         <p v-if="codeError" class="error-text"><CircleAlert :size="16" /> {{ codeError }}</p>
         <p v-else-if="touched.s2 && errs.codes" class="error-text"><CircleAlert :size="16" /> {{ errs.codes }}</p>
       </div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleCheck, CircleX, CircleHelp, SkipForward, Cpu, Cog, Code2, Clock } from 'lucide-vue-next'
+import { CircleCheck, CircleX, CircleHelp, SkipForward, Cpu, Cog, Clock } from 'lucide-vue-next'
+import { TOOL_KIND_LABEL } from '@/constants/status'
 import ConfidenceBar from '@/components/common/ConfidenceBar.vue'
 import DataSourceList from '@/components/common/DataSourceList.vue'
 import AnnotatedImage from './AnnotatedImage.vue'
@@ -9,7 +10,8 @@ import type { AgentResult, DataSource, RepairImage } from '@/types'
 /** hideImage: 사진 이상 영역을 화면의 별도 섹션에서 모아 보여 줄 때 카드 안 사진을 숨김 */
 const props = defineProps<{ result: AgentResult; images: RepairImage[]; sources: DataSource[]; hideImage?: boolean }>()
 
-const AGENT = { PCB: { label: 'PCB 분석', icon: Cpu }, MOTOR: { label: '모터 분석', icon: Cog }, SW: { label: 'SW·로그 분석', icon: Code2 } }
+/** 부위별 분석 카드: PCB · 기계(MOTOR). SW 분석은 없음 */
+const AGENT = { PCB: { label: TOOL_KIND_LABEL.PCB, icon: Cpu }, MOTOR: { label: TOOL_KIND_LABEL.MOTOR, icon: Cog } }
 const VERDICT = {
   NORMAL: { label: '이상 없음', tone: 'success', icon: CircleCheck },
   ABNORMAL: { label: '이상 탐지', tone: 'danger', icon: CircleX },
@@ -38,7 +40,7 @@ const anns = computed(() => props.result.annotations.filter((a) => a.imageId ===
         <li v-for="f in result.findings" :key="f">{{ f }}</li>
       </ul>
       <AnnotatedImage v-if="annotatedImage && !hideImage" :image="annotatedImage" :annotations="anns" :title="`${AGENT[result.agent].label} · 이상 영역`" />
-      <ConfidenceBar :value="result.confidence" label="Agent 신뢰도" size="sm" />
+      <ConfidenceBar :value="result.confidence" label="부위 분석 점수" size="sm" />
       <div class="foot">
         <DataSourceList :sources="sources" :ids="result.sourceIds" inline />
         <span class="faint"><Clock :size="13" /> {{ result.durationSec }}초</span>

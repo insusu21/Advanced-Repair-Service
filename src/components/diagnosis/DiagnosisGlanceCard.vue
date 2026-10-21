@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* 진단 '한눈에 보기' — 항상 펼쳐진 핵심 요약
- *  AI 초안(원인·신뢰도·긴급도·권장 조치·필요 부품·판단 근거·출처) | 사람의 결정(승인 상태·승인자·시각)
+ *  AI 초안(원인·AI 판단 점수·긴급도·권장 조치·필요 부품·판단 근거·출처) | 사람의 결정(승인 상태·승인자·시각)
  *  화면에서 AI 초안 배지는 이 카드에만 한 번 표시한다. */
 import { computed } from 'vue'
 import { Clock, Gauge, Wrench, Package, ListChecks, BookOpen, UserCheck, UserX, Hourglass } from 'lucide-vue-next'
@@ -39,7 +39,7 @@ const decIcon = computed(() => (dec.value.state === 'APPROVED' ? UserCheck : dec
       <p class="eyebrow">가장 가능성 높은 원인</p>
       <h2 id="glance-title" class="cause">{{ diagnosis.topCause }}</h2>
       <div class="meta">
-        <ConfidenceBar :value="diagnosis.confidence" label="AI 신뢰도" class="conf" />
+        <ConfidenceBar :value="diagnosis.confidence" class="conf" />
         <span class="m"><Gauge :size="16" /> 긴급도 <span class="badge" :class="`tone-${URGENCY_META[diagnosis.urgency].tone}`">{{ URGENCY_META[diagnosis.urgency].label }}</span></span>
       </div>
 
