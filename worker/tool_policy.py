@@ -2,6 +2,8 @@
 import json
 import math
 
+from . import config as C
+
 
 class ToolResponseError(ValueError):
     """통신은 성공했지만 오류 응답이거나 필요한 결과 형식이 아니다."""
@@ -20,6 +22,16 @@ class RequiredToolFailure(RuntimeError):
 def check_response(response, tool):
     if getattr(response, "is_error", False):
         raise ToolResponseError(tool)
+    data = getattr(response, "structured_content", None)
+    if data is not None:
+        check_object(data, tool)
+    total = 0
+    for block in getattr(response, "content", []):
+        # SDK 수신 이후의 파싱·전파 제한이며 네트워크 스트리밍 차단은 아니다.
+        value = block.model_dump(mode="json") if hasattr(block, "model_dump") else vars(block)
+        total += len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode())
+        if total > C.MAX_MCP_RESPONSE_BYTES:
+            raise ToolResponseError(tool)
     return response
 
 
@@ -27,7 +39,8 @@ def check_object(data, tool):
     if not isinstance(data, dict) or data.get("error"):
         raise ToolResponseError(tool)
     try:
-        json.dumps(data, allow_nan=False)
+        if len(json.dumps(data, ensure_ascii=False, allow_nan=False).encode()) > C.MAX_MCP_RESPONSE_BYTES:
+            raise ToolResponseError(tool)
     except (TypeError, ValueError) as exc:
         raise ToolResponseError(tool) from exc
     return data

@@ -17,7 +17,7 @@ from . import config as C
 from . import tools
 from . import enrichment
 from .harness import LimitExceeded, observed
-from .tool_policy import (RequiredToolFailure, check_image_result, check_object,
+from .tool_policy import (check_image_result, check_object,
                           failure_output, limitation_note)
 
 
@@ -41,12 +41,23 @@ async def emit(config, event_type: str, payload: dict):
 async def classify_photos(state: State, config) -> dict:
     await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "CLASSIFYING_PHOTOS"})
     photos = await tools.load_photos(state["command"])
+    failures = []
     for p in photos:
         # 이미 구분해 접수한 사진은 그 구분을 사용. GENERAL/미지정은 원본 GPT 분류 유지.
         p["kind"] = {"PCB": "PCB", "MOTOR": "MECH", "MECHANICAL": "MECH"}.get(p.get("target"))
         if p["kind"] is None:
-            p["kind"] = await tools.classify_photo(p["path"])
-    return {"photos": photos}
+            try:
+                p["kind"] = await tools.classify_photo(p["path"])
+            except LimitExceeded:
+                raise
+            except Exception as exc:
+                p["kind"] = "OTHER"
+                out = failure_output("classify_photo", exc, required=True)
+                failures.append({"source": "CLASSIFICATION", "attachmentId": p["attachmentId"],
+                                 "found": False, "output": out})
+                await emit(config, "TOOL_EXECUTED", {"tool": "classify_photo", "toolVersion": "1",
+                           "agentType": "RAG", "mcpServer": "agent-llm", "input": {}, "output": out})
+    return {"photos": photos, "findings": failures}
 
 
 # ── 2. 글 분리 ───────────────────────────────────────────
@@ -105,7 +116,9 @@ async def run_photo_mcp(state, config, kind: str, call, tool: str, agent_type: s
             await emit(config, "TOOL_EXECUTED", {"tool": out["tool"], "toolVersion": "1",
                        "agentType": agent_type, "mcpServer": server,
                        "input": {"path": p["path"]}, "output": out})
-            raise RequiredToolFailure(out["tool"], out["error"]) from e
+            findings.append({"source": kind, "attachmentId": p["attachmentId"],
+                             "found": False, "output": out})
+            continue  # 같은 부위의 다음 사진과 병렬 분석을 계속 수집한다.
         await emit(config, "TOOL_EXECUTED", {"tool": tool, "toolVersion": "1", "agentType": agent_type,
                                              "mcpServer": server, "input": {"path": p["path"]}, "output": out})
         findings.append({"source": kind, "attachmentId": p["attachmentId"], "found": bool(out.get("is_defective")), "output": out})
@@ -157,13 +170,29 @@ async def rag_mcp(state: State, config) -> dict:
 # ── 4. 판단 ──────────────────────────────────────────────
 
 
+def text_evidence(findings: list[dict]) -> bool:
+    """사진 근거가 없을 때만 쓰는 차선 근거. 표준화된 소견이나 검색된 사례가 있어야 한다."""
+    return any(f.get("source") == "RAG" and f.get("output", {}).get("hits") for f in findings) or \
+           any(f.get("source") == "INTERPRETATION" and f.get("output", {}).get("observations") for f in findings)
+
+
 def decide(findings: list[dict], photo_round: int) -> str:
     """근거가 충분한가? TODO(오케스트레이션): GPT 판단으로 바꿀 수 있다."""
-    if any(f["found"] for f in findings):
+    found = any(f["found"] for f in findings)
+    # 이미지 분석 실패는 정상/결함 없음과 구분한다. 다른 성공 결과는 보존하되 재입력을 요청한다.
+    if any(f.get("source") in ("PCB", "MECH", "CLASSIFICATION")
+           and f.get("output", {}).get("error") for f in findings):
+        if photo_round < C.MAX_PHOTO_ROUNDS:
+            return "PHOTO"
+        # 재요청을 다 쓴 뒤에도 실패가 남으면, 남은 근거만으로 리포트를 낸다.
+        # 미확인 영역은 report 노드가 요약에 명시한다.
+        return "COMPLETE" if found or text_evidence(findings) else "FAIL"
+    if found:
         return "COMPLETE"  # 사진에서 결함을 하나라도 찾음
     if photo_round < C.MAX_PHOTO_ROUNDS:
         return "PHOTO"  # 못 찾음 + 아직 요청 가능
-    return "FAIL"  # 3번 요청했는데도 못 찾음
+    # 3회를 다 요청했는데도 사진 근거가 없으면 소견·검색 근거만으로 작성한다.
+    return "COMPLETE" if text_evidence(findings) else "FAIL"
 
 
 async def judge(state: State, config) -> dict:
@@ -198,7 +227,11 @@ async def report(state: State, config) -> dict:
                           **{k: v for k, v in h.items() if k != "kind"}} for h in f["output"]["hits"]]
     payload = {"summary": r.summary, "modelVersion": C.MODEL_VERSION, "repairMethod": r.repairMethod,
                "candidates": candidates, "recommendedParts": [p.model_dump() for p in r.recommendedParts],
-               "evidence": evidence, **(await screen_fields(state, candidates))}
+               "evidence": evidence, "analysisResults": analysis_summary(state)["analysisResults"],
+               **(await screen_fields(state, candidates))}
+    if not any(e["type"] == "PHOTO" for e in evidence):
+        payload["summary"] += ("\n\n사진 근거 없이 소견·매뉴얼 검색만으로 작성한 리포트입니다. "
+                               "검색 유사도는 고장 확률이 아니므로 수리 전 해당 부위를 직접 확인해 주세요.")
     note = limitation_note(state["findings"])
     if note:
         payload["summary"] += "\n\n" + note  # LLM이 누락해도 최종 JSON·리포트에 반드시 남긴다.
@@ -236,18 +269,48 @@ async def screen_fields(state, candidates) -> dict:
     return {"topCause": candidates[0]["cause"] if candidates else None, "agents": agents, "similarCases": cases}
 
 
+def analysis_summary(state):
+    """재입력/종료에도 실제 수집 결과를 남긴다. 도구 실패를 정상으로 표시하지 않는다."""
+    rows = []
+    for f in state.get("findings", []):
+        out = f["output"]
+        rows.append({"source": f["source"], "attachmentId": f.get("attachmentId"),
+                     "status": "ERROR" if out.get("error") else "DETECTED" if f["found"] else "NO_DETECTION"
+                               if f["source"] in ("PCB", "MECH") else "REFERENCE",
+                     "labels": sorted({d["type"] for d in out.get("defects", [])}),
+                     "errorCode": out.get("errorCode"), "tool": out.get("tool"),
+                     "referenceCount": len(out.get("hits", []))})
+    detected = sum(r["status"] == "DETECTED" for r in rows)
+    errors = sum(r["status"] == "ERROR" for r in rows)
+    summary = f"사진 {detected}건에서 결함 단서를 수집했습니다. 분석·보조 도구 오류 {errors}건. 진단은 아직 확정되지 않았습니다."
+    return {"summary": summary, "analysisResults": rows}
+
+
 async def request_photo(state: State, config) -> dict:
     cmd = state["command"]
-    payload = {"round": cmd["payload"]["round"] + 1, "bodyPart": "wheel",  # TODO: GPT가 부위·설명을 고른다
-               "description": "결함 부위를 가까이에서 밝게 다시 찍어 주세요", "checkpoint": f"task-{cmd['taskId']}"}
+    failed = {f["source"] for f in state.get("findings", []) if f["output"].get("error")}
+    kinds = failed & {"PCB", "MECH"} or {p["kind"] for p in state.get("photos", [])} & {"PCB", "MECH"}
+    target = "PCB" if kinds == {"PCB"} else "MOTOR" if kinds == {"MECH"} else "GENERAL"
+    instruction = {"PCB": "PCB 전체와 결함 의심 부위를 밝고 선명하게 촬영하고 증상을 보충해 주세요.",
+                   "MOTOR": "기계·모터의 이상 부위를 밝고 선명하게 촬영하고 작동 증상을 보충해 주세요.",
+                   "GENERAL": "고장 의심 부위의 사진과 작동 증상을 추가해 주세요."}[target]
+    details = analysis_summary(state)
+    description = details["summary"] + "\n" + instruction
+    if failed & {"PCB", "MECH", "CLASSIFICATION"}:
+        description += "\n분석 도구 오류로 확인하지 못한 자료가 있습니다. 사진 자체의 문제로 확정한 것은 아니며 서비스 복구도 필요할 수 있습니다."
     note = limitation_note(state["findings"])
     if note:
-        payload["description"] += "\n\n" + note
-    return {"result": {"eventType": "PHOTO_REQUESTED", "payload": payload}}  # requestKey는 main.py가 붙인다
+        description += "\n" + note
+    payload = {"round": cmd["payload"]["round"] + 1, "bodyPart": target,
+               "description": description, "checkpoint": f"task-{cmd['taskId']}", **details}
+    return {"result": {"eventType": "PHOTO_REQUESTED", "payload": payload}}
 
 
 async def fail(state: State, config) -> dict:
-    return {"result": {"eventType": "DIAGNOSIS_FAILED", "payload": {"errorCode": "INCONCLUSIVE_AFTER_THIRD_PHOTO"}}}
+    details = analysis_summary(state)
+    details["summary"] += " 추가 자료 요청 3회 후에도 진단을 완료하지 못했습니다. 수동 점검이 필요합니다."
+    return {"result": {"eventType": "DIAGNOSIS_FAILED", "payload": {
+        "errorCode": "INCONCLUSIVE_AFTER_THIRD_PHOTO", **details}}}
 
 
 # ── 조립 ────────────────────────────────────────────────
