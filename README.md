@@ -6,8 +6,8 @@
 ## 빠른 실행 (처음 받는 사람)
 필요: macOS/Linux, Docker Desktop(켜 둔 상태), JDK 21, [uv](https://docs.astral.sh/uv/), Node 20+, git
 ```bash
-git clone https://github.com/skala-ai-agent-team6/skeleton-agent.git
-cd skeleton-agent
+git clone https://github.com/skala-ai-agent-team6/Final_Robot-Vacuum-Repair-Agent.git
+cd Final_Robot-Vacuum-Repair-Agent
 ./setup.sh          # 1. 처음 한 번: 파이썬·프론트 패키지 설치, .env 템플릿 생성
 # 2. 레포 맨 위 .env 파일을 열어 OPENAI_API_KEY= 뒤에 키를 넣는다 (다른 값은 비워 둔다)
 ./run.sh            # 3. 전부 띄움 (처음엔 RAG 인덱스 생성으로 1~2분 더 걸림)
