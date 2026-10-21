@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .context_policy import masked
-
 LOGGER = logging.getLogger("repair_agent")
 
 
@@ -18,7 +16,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
             "level": record.levelname,
             "event": record.getMessage(),
-            **masked(getattr(record, "agent_fields", {})),
+            **getattr(record, "agent_fields", {}),
         }, ensure_ascii=False, allow_nan=False)
 
 

@@ -3,7 +3,6 @@ import json
 from fastmcp import Client
 
 from . import config as C
-from .context_policy import prepare_text
 from .harness import guarded
 from .tool_policy import check_object, check_response
 
@@ -40,7 +39,6 @@ async def call(url, name, arguments):
 
 
 async def normalize_observation(text):
-    text = prepare_text(text, "normalize_observation")
     data = await call(C.OBSERVATION_MCP_URL, "normalize_observation",
                       {"raw_text": text, "origin": "technician", "technician_confirmed": True})
     if data.get("raw_text") != text or not isinstance(data.get("observations"), list):
@@ -77,4 +75,4 @@ async def list_damage_labels():
 
 async def search_reference_documents(query, collection="pcb_documents"):
     return await call(C.RAG_MCP_URL, "search_reference_documents",
-                      {"query": prepare_text(query, "reference_query"), "collection": collection, "top_k": 3, "min_score": 0.75})
+                      {"query": query, "collection": collection, "top_k": 3, "min_score": 0.75})

@@ -8,14 +8,12 @@ from pathlib import Path
 import json
 
 from . import config as C
-from .context_policy import masked
 
 OUT = C.HERE / "reports"
 TITLE = {"DIAGNOSIS_COMPLETED": "진단 완료", "PHOTO_REQUESTED": "추가 사진 요청", "DIAGNOSIS_FAILED": "진단 실패"}
 
 
 def save(command: dict, result: dict, execution=None) -> Path:
-    command, result = masked(command), masked(result)
     repair = command["payload"]["repair"]
     p = result["payload"]
     lines = [
@@ -62,34 +60,10 @@ def save(command: dict, result: dict, execution=None) -> Path:
             "NODE_EXECUTION_LIMIT": "그래프 노드 실행 횟수 한도를 초과했습니다.",
             "GRAPH_STEP_LIMIT": "LangGraph super-step 한도를 초과했습니다.",
             "RUN_TIMEOUT": "이벤트 전체 실행 시간 한도를 초과했습니다.",
-            "OUTPUT_SIZE_LIMIT": "결과가 이벤트 크기 상한을 초과하여 실패 결과로 종료했습니다.",
-            "CONTEXT_LIMIT": "필수 근거를 유지한 채 LLM 문맥 한도에 맞출 수 없어 종료했습니다.",
-            "TOKEN_BUDGET_EXCEEDED": "이벤트 실행의 LLM 토큰 예산을 초과했습니다.",
             "TOOL_TIMEOUT": "개별 도구 호출 시간 초과가 재시도 후에도 해결되지 않았습니다.",
         }
         if p["errorCode"] in limits:
             lines += ["- " + limits[p["errorCode"]], "- 실행 제한에 따른 종료이며 정상 판정이 아닙니다."]
-
-    if p.get("analysisResults") is not None:
-        lines += ["", "## 수집된 분석 결과", "", p.get("summary", ""), "",
-                  "| 분석 | 사진 ID | 상태 | 검출 라벨 | 오류 코드 |",
-                  "|---|---|---|---|---|"]
-        for item in p["analysisResults"]:
-            lines.append(f"| {item['source']} | {item.get('attachmentId') or '-'} | {item['status']} | {', '.join(item['labels']) or '-'} | {item.get('errorCode') or '-'} |")
-
-    if execution and execution.get("llm"):
-        usage = execution["llm"]
-        lines += ["", "## 문맥·토큰 관리", "",
-                  f"- Agent LLM 호출: {usage['calls']}회",
-                  f"- 예약 토큰 예산: {usage['tokens_reserved']} / {usage['run_token_limit']} (텍스트 보수적 상계·이미지 추정)",
-                  f"- API 반환 사용량: {json.dumps(usage['actual_usage'], ensure_ascii=False)}",
-                  "- MCP 서버 내부 LLM 사용량은 포함하지 않습니다. 텍스트 패턴 마스킹은 이미지 속 개인정보를 제거하지 않습니다."]
-        for action in execution.get("context_actions", []):
-            if action.get("truncated"):
-                lines.append(f"- 문맥 축약: {action['kind']}")
-
-    if execution and execution.get("trace_id"):
-        lines += ["", "## 실행 추적", "", f"- LangSmith trace_id: {execution['trace_id']}"]
 
     if execution and execution.get("prompts"):
         lines += ["", "## 실행에 사용한 프롬프트", "",

@@ -58,16 +58,6 @@ KAFKA_MAX_POLL_INTERVAL_MS = max(
 
 KAFKA_AUTO_OFFSET_RESET = os.getenv("KAFKA_AUTO_OFFSET_RESET", "earliest")
 
-# 문맥 제한: UTF-8 바이트로 텍스트 토큰 수를 보수적으로 예약한다.
-MAX_MCP_RESPONSE_BYTES = int(os.getenv("MAX_MCP_RESPONSE_BYTES", "262144"))
-OBSERVATION_CONTEXT_BYTES = int(os.getenv("OBSERVATION_CONTEXT_BYTES", "6000"))
-TOOL_CONTEXT_BYTES = int(os.getenv("TOOL_CONTEXT_BYTES", "8000"))
-REPORT_FINDINGS_BYTES = int(os.getenv("REPORT_FINDINGS_BYTES", "24000"))
-MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "64000"))
-MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
-MAX_RUN_TOKENS = int(os.getenv("MAX_RUN_TOKENS", "800000"))
-IMAGE_TOKEN_RESERVE = int(os.getenv("IMAGE_TOKEN_RESERVE", "50000"))
-MAX_EVENT_BYTES = int(os.getenv("MAX_EVENT_BYTES", "750000"))
 # [통합] 업무 MCP(재고·공장). 기본은 run.sh가 띄우는 로컬 mcp_servers/business (우리 DB를 그대로 읽음)
 # 팀원 ngrok 서버를 쓰려면 BUSINESS_MCP_URL=https://<ngrok>/mcp 와 아래 대응표(예: 1:47,3:46 / 1:12 / 1:12)를 준다
 BUSINESS_MCP_URL = os.getenv("BUSINESS_MCP_URL", "http://127.0.0.1:8015/mcp")

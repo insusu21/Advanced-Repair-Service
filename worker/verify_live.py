@@ -94,12 +94,12 @@ async def run(scenario, fault=None):
         (report.OUT/summary_name).write_text(json.dumps(summaries, ensure_ascii=False, indent=2))
         print(json.dumps(row, ensure_ascii=False), flush=True)
         if fault == "mechanical-unavailable":
-            valid = (result["eventType"] == "PHOTO_REQUESTED"
-                     and result["payload"]["round"] == 1
+            valid = (result["eventType"] == "DIAGNOSIS_FAILED"
+                     and result["payload"]["errorCode"] == "REQUIRED_TOOL_FAILED"
                      and any(e["output"].get("failurePolicy") == "required" for e in errors)
                      and metrics["retries"] >= 2
-                     and any(e["eventType"] == "PHOTO_REQUESTED" for e in output.events)
-                     and "ERROR" in path.read_text())
+                     and not any(e["eventType"] == "PHOTO_REQUESTED" for e in output.events)
+                     and "정상 판정이 아닙니다" in path.read_text())
         elif fault == "rag-unavailable":
             valid = (result["eventType"] == "DIAGNOSIS_COMPLETED" and len(errors) == 1
                      and errors[0].get("tool") == "retrieve_repair_context"
