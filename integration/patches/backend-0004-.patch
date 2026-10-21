@@ -1,0 +1,29 @@
+From 840d0da817187a156b324b45ecaaef63f8e5079b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E1=84=8B=E1=85=B2=E1=84=80=E1=85=B5=E1=86=AF=E1=84=89?=
+ =?UTF-8?q?=E1=85=A5=E1=86=AB?= <raphael807@naver.com>
+Date: Wed, 21 Oct 2026 09:23:42 +0900
+Subject: [PATCH] =?UTF-8?q?=ED=86=B5=ED=95=A9:=20=EC=98=88=EC=8B=9C=20?=
+ =?UTF-8?q?=EC=8B=9C=EB=A6=AC=EC=96=BC=20=EC=B6=94=EA=B0=80?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UXSFZLvoeAA5UPPrnz8vrG
+---
+ src/main/resources/db/dev-seed.sql | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/main/resources/db/dev-seed.sql b/src/main/resources/db/dev-seed.sql
+index 72fb1f8..7888203 100644
+--- a/src/main/resources/db/dev-seed.sql
++++ b/src/main/resources/db/dev-seed.sql
+@@ -14,3 +14,5 @@ INSERT INTO part(id,part_number,name,category) OVERRIDING SYSTEM VALUE VALUES (3
+ INSERT INTO model_part VALUES (1,3),(2,3) ON CONFLICT DO NOTHING;
+ INSERT INTO part_supplier VALUES (3,1,7) ON CONFLICT DO NOTHING;
+ INSERT INTO inventory(warehouse_id,part_id,on_hand,reserved) VALUES (1,3,0,0) ON CONFLICT DO NOTHING;
++-- [통합] 프론트 접수 화면의 예시 시리얼. DB에 없어 "요청한 정보를 찾을 수 없습니다"가 떴다
++INSERT INTO product(id,serial_number,model_id,manufactured_on,information) OVERRIDING SYSTEM VALUE VALUES (3,'RC2026000187',1,'2026-01-15','{"manufacturer":"Demo","specifications":{"batteryWh":60}}') ON CONFLICT DO NOTHING;
+-- 
+2.55.0
+
