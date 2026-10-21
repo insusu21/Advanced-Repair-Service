@@ -311,13 +311,14 @@ def search_past_orders(query: str, limit: int = 5) -> list[dict[str, Any]]:
     with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT DISTINCT po.id AS purchase_order_id, po.case_reference,
+            -- [통합] 우리 DB(박시현 스키마)는 case_reference(문자) 대신 case_id(접수 번호)다. 이름은 그대로 돌려준다
+            SELECT DISTINCT po.id AS purchase_order_id, po.case_id::text AS case_reference,
                    po.status, po.created_at, requester.name AS requester_name
             FROM purchase_order po
             JOIN app_user requester ON requester.id = po.requested_by
             LEFT JOIN purchase_order_item poi ON poi.order_id = po.id
             LEFT JOIN part p ON p.id = poi.part_id
-            WHERE po.case_reference ILIKE %s
+            WHERE po.case_id::text ILIKE %s
                OR po.status::text ILIKE %s
                OR requester.name ILIKE %s
                OR p.part_number ILIKE %s
@@ -462,9 +463,14 @@ def create_purchase_order_draft(
     items: list[dict[str, Any]],
     case_reference: str | None = None,
 ) -> dict[str, Any]:
-    """Create a PENDING order draft. A quality manager must approve it."""
+    """Create a PENDING order draft. A quality manager must approve it.
+    case_reference: 수리 접수 번호(repair_case id). [통합] 우리 DB는 발주에 접수 번호가 필수다."""
     if not items:
         raise ValueError("At least one order item is required")
+    # [통합] 우리 DB는 purchase_order.case_id(숫자, 필수)라 접수 번호로 바꾼다
+    if not (case_reference or "").strip().isdecimal():
+        raise ValueError("case_reference must be a repair case id (number)")
+    case_id = int(case_reference)
     with get_connection() as conn, conn.transaction(), conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             "SELECT id FROM app_user WHERE id = %s AND active AND role = 'TECHNICIAN'",
@@ -472,15 +478,18 @@ def create_purchase_order_draft(
         )
         if cur.fetchone() is None:
             raise ValueError("requested_by must be an active TECHNICIAN user")
+        cur.execute("SELECT 1 FROM repair_case WHERE id = %s", (case_id,))
+        if cur.fetchone() is None:
+            raise ValueError("case_reference must be an existing repair case id")
 
         request_key = uuid4()
         cur.execute(
             """
-            INSERT INTO purchase_order (case_reference, request_key, requested_by)
+            INSERT INTO purchase_order (case_id, request_key, requested_by)
             VALUES (%s, %s, %s)
-            RETURNING id, case_reference, request_key, status, created_at
+            RETURNING id, case_id::text AS case_reference, request_key, status, created_at
             """,
-            (case_reference, request_key, requested_by),
+            (case_id, request_key, requested_by),
         )
         order = cur.fetchone()
         for item in items:
@@ -497,8 +506,9 @@ def create_purchase_order_draft(
                 INSERT INTO purchase_order_item
                     (order_id, part_id, quantity, warehouse_id, factory_id)
                 VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, part_id, quantity, warehouse_id, factory_id
+                RETURNING id, part_id, quantity, warehouse_id, factory_id, source
                 """,
+                # [통합] 우리 DB의 source(창고/공장)는 warehouse_id/factory_id로 자동 계산되는 열이라 넣지 않는다
                 (order["id"], part_id, quantity, warehouse_id, factory_id),
             )
         cur.execute(
@@ -522,7 +532,7 @@ def get_purchase_order(order_id: int) -> dict[str, Any]:
     with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT po.id, po.case_reference AS reference_id,
+            SELECT po.id, po.case_id::text AS reference_id,  -- [통합] case_reference → case_id
                    po.status, po.requested_by,
                    requester.name AS requester_name, po.decided_by,
                    approver.name AS approver_name, po.decision_note,
