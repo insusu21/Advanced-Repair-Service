@@ -115,6 +115,10 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
     }, 300)
   }
 
+  // [통합] SSE가 프록시를 거치며 화면에 안 닿는 경우가 있어(진행 화면이 '분석 중'에 멈춤) 진행 중일 때 4초마다 다시 조회한다
+  const IN_PROGRESS = ['RECEIVED', 'QUEUED', 'ANALYZING', 'ADDITIONAL_INFO_NEEDED']
+  let pollTimer: number | undefined
+
   function subscribe(id: number) {
     unsubscribe()
     conn = connectRepairEvents(id, {
@@ -122,8 +126,15 @@ export const useRepairDetailStore = defineStore('repairDetail', () => {
       onChange: (name) => onServerChange(id, name),
       onState: (s) => (sseState.value = s),
     })
+    pollTimer = window.setInterval(async () => {
+      const before = repair.value?.status
+      if (!before || !IN_PROGRESS.includes(before)) return
+      await load(id)
+      if (repair.value?.status !== before && repair.value?.status === 'DIAGNOSIS_COMPLETED') await loadDiagnosis(id)
+    }, 4000)
   }
   function unsubscribe() {
+    window.clearInterval(pollTimer)
     window.clearTimeout(refetchTimer)
     window.clearTimeout(toolsTimer)
     conn?.close()
