@@ -76,7 +76,7 @@ function toolsFor(r: Repair): ToolKind[] {
   const kinds = new Set(r.images.map((i) => i.kind))
   const list: ToolKind[] = ['RAG']
   if (kinds.has('PCB')) list.push('PCB')
-  if (kinds.has('MECHANICAL') || kinds.has('ADDITIONAL')) list.push('MOTOR')
+  if (kinds.has('MOTOR') || kinds.has('ADDITIONAL')) list.push('MOTOR')
   return list
 }
 
