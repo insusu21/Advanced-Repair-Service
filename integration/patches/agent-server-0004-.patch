@@ -1,0 +1,61 @@
+From b9301a6ed9b28dbada4f178a3f4b255cef83fbc3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E1=84=8B=E1=85=B2=E1=84=80=E1=85=B5=E1=86=AF=E1=84=89?=
+ =?UTF-8?q?=E1=85=A5=E1=86=AB?= <raphael807@naver.com>
+Date: Wed, 21 Oct 2026 08:23:23 +0900
+Subject: [PATCH] =?UTF-8?q?=ED=86=B5=ED=95=A9:=20=EC=88=98=EC=A0=95=20?=
+ =?UTF-8?q?=EC=9D=B4=EC=9C=A0=20=EC=A3=BC=EC=84=9D?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UXSFZLvoeAA5UPPrnz8vrG
+---
+ app/backend_v2.py | 2 ++
+ app/models.py     | 1 +
+ app/workflow.py   | 1 +
+ 3 files changed, 4 insertions(+)
+
+diff --git a/app/backend_v2.py b/app/backend_v2.py
+index d340278..b8cd2ce 100644
+--- a/app/backend_v2.py
++++ b/app/backend_v2.py
+@@ -120,9 +120,11 @@ def to_backend_events(command: BackendCommand, result: dict) -> list[dict]:
+         output = execution["output"]
+         metadata = output if isinstance(output, dict) else {}
+         emit("TOOL_EXECUTED", {"tool": name, "toolVersion": metadata.get("tool_version", "mock-v1"),
++                               # [통합] mcpServer: 실제 RAG도 "mock"으로 찍히던 문제 → source_server()로 판별
+                                "modelVersion": metadata.get("model_version", "mock-v1"),
+                                "agentType": agent, "mcpServer": metadata.get("mcp_server") or source_server(output), "output": output})
+     if result["status"] == "WAITING_INPUT":
++        # [통합] 원래 ContractPending으로 막혀 있어 사진 요청 흐름이 안 돌았음. 백엔드 INTEGRATION.md 필드대로 연다.
+         # 근거 부족 → 추가 사진 요청 후 그래프 종료. Spring이 같은 taskId로 DIAGNOSIS_RESUMED를 보낸다
+         req = result["outgoing_event"]["payload"]
+         emit("PHOTO_REQUESTED", {
+diff --git a/app/models.py b/app/models.py
+index f0c02c8..4ce5e9f 100644
+--- a/app/models.py
++++ b/app/models.py
+@@ -2,6 +2,7 @@ from typing import Literal
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
+ from app.limits import MAX_ADDITIONAL_REQUESTS
+ 
++# [통합] MECHANICAL → MOTOR: 백엔드 DB(attachment.target CHECK)가 PCB/MOTOR/SW/GENERAL만 허용
+ Domain = Literal["PCB", "MOTOR"]
+ 
+ 
+diff --git a/app/workflow.py b/app/workflow.py
+index 43e89a3..8d34a3c 100644
+--- a/app/workflow.py
++++ b/app/workflow.py
+@@ -158,6 +158,7 @@ def build_graph(tools: AnalysisTools, max_calls=24, max_retries=2,
+             report = None
+             if not missing:
+                 # 실제 LLM with_structured_output 연결 전 Pydantic 출력 검증.
++                # [통합] 원래는 도구 실행 순서(이름순)라 점수 낮은 후보가 1순위가 될 수 있었음.
+                 # 후보는 검출 점수 높은 순. 원인 코드·근거 문장은 코드가 검출 결과로 만든다 (GPT는 report_writer에서 문장만)
+                 ranked = sorted(results, key=lambda r: (-r["confidence"], r["domain"]))
+                 report = DiagnosisReport.model_validate({
+-- 
+2.55.0
+

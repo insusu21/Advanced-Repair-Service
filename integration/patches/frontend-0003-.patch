@@ -1,0 +1,34 @@
+From 1c4c23550027d2c4068e6ddeeaec6e6caf5dd8d0 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E1=84=8B=E1=85=B2=E1=84=80=E1=85=B5=E1=86=AF=E1=84=89?=
+ =?UTF-8?q?=E1=85=A5=E1=86=AB?= <raphael807@naver.com>
+Date: Wed, 21 Oct 2026 08:38:17 +0900
+Subject: [PATCH] =?UTF-8?q?=ED=86=B5=ED=95=A9:=20=EB=A1=9C=EA=B7=B8?=
+ =?UTF-8?q?=EC=9D=B8=20=EC=9D=B4=EB=A9=94=EC=9D=BC=20=ED=98=95=EC=8B=9D=20?=
+ =?UTF-8?q?=EA=B2=80=EC=82=AC=20=EC=A0=9C=EA=B1=B0?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UXSFZLvoeAA5UPPrnz8vrG
+---
+ src/views/LoginView.vue | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/views/LoginView.vue b/src/views/LoginView.vue
+index 82dda6f..a014b99 100644
+--- a/src/views/LoginView.vue
++++ b/src/views/LoginView.vue
+@@ -25,7 +25,8 @@ const idLabel = USE_MOCK ? '사번' : '이메일'
+ 
+ function validate() {
+   const v = form.employeeId.trim()
+-  errors.employeeId = !v ? `${idLabel}을 입력해 주세요.` : !USE_MOCK && !/^\S+@\S+\.\S+$/.test(v) ? '이메일 형식이 올바르지 않습니다.' : undefined
++  // [통합] 이메일 형식 검사 제거: 백엔드 dev 계정 아이디가 tech1·tech2·quality(이메일 아님)라 로그인이 막혔다. 틀린 값은 서버가 401로 거른다
++  errors.employeeId = !v ? `${idLabel}을 입력해 주세요.` : undefined
+   errors.password = form.password ? undefined : '비밀번호를 입력해 주세요.'
+   return !errors.employeeId && !errors.password
+ }
+-- 
+2.55.0
+

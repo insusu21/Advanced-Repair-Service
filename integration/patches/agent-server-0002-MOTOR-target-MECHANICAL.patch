@@ -1,0 +1,34 @@
+From 8fdffcfac382bae4575f59b5e980915cd4de9fa5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E1=84=8B=E1=85=B2=E1=84=80=E1=85=B5=E1=86=AF=E1=84=89?=
+ =?UTF-8?q?=E1=85=A5=E1=86=AB?= <raphael807@naver.com>
+Date: Tue, 20 Oct 2026 20:15:10 +0900
+Subject: [PATCH 2/3] =?UTF-8?q?MOTOR=20target=EC=9D=84=20MECHANICAL?=
+ =?UTF-8?q?=EB=A1=9C=20=EB=B3=80=ED=99=98?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UXSFZLvoeAA5UPPrnz8vrG
+---
+ app/kafka_worker.py | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/app/kafka_worker.py b/app/kafka_worker.py
+index 5a885fd..1c4a493 100644
+--- a/app/kafka_worker.py
++++ b/app/kafka_worker.py
+@@ -52,6 +52,10 @@ async def handle(raw: bytes, processor, producer):
+                                      key=str(event["taskId"]).encode())
+     try:
+         body = json.loads(raw)
++        # Spring DB는 기계 사진을 MOTOR로 저장한다(attachment.target 규칙). 기존 계약 이름 MECHANICAL로 맞춘다
++        for a in body.get("payload", {}).get("attachments", []):
++            if a.get("target") == "MOTOR":
++                a["target"] = "MECHANICAL"
+         command = BackendCommand.model_validate(body)
+     except (ValueError, ValidationError) as exc:  # 깨진 JSON·계약 위반 → DLT만 (taskId를 믿을 수 없음)
+         log_event("kafka.invalid_command", error_type=type(exc).__name__)
+-- 
+2.55.0
+

@@ -102,3 +102,6 @@ GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakag
 - 같은 그룹 이름으로 워커를 두 개 켜면 명령을 나눠 갖는다. 시험할 땐 하나만 켠다.
 - 새 그룹으로 처음 켜면 Kafka에 쌓인 예전 명령부터 처리한다.
 - 박스 그린 사진은 각 MCP 폴더의 `results/`에 저장된다 (git 제외).
+
+## 통합 버전 (백엔드·에이전트·프론트)
+`integration/README.md` — 실행법, `integration/변경메모.md` — 팀원 코드 수정 내역, `integration/patches/` — 각 레포 패치

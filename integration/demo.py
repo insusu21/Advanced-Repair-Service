@@ -1,0 +1,75 @@
+"""통합 시연: 기사 로그인 → 사진 2장(PCB·기계)으로 접수 → Spring → Kafka → 에이전트 → Spring → 진단 결과 조회."""
+import http.cookiejar, json, os, sys, time, urllib.parse, urllib.request, uuid
+from pathlib import Path
+
+BASE = os.environ.get("SPRING_URL", "http://localhost:8080")
+AGENT = Path.home() / "Downloads/16주차_AI_Agent_생성/팀레포/agent-server"
+SCENARIO = sys.argv[1] if len(sys.argv) > 1 and __name__ == "__main__" else "complete"
+# complete: 결함이 보이는 사진 2장 → 바로 진단 완료
+# photo:    결함이 안 보이는 기계 사진 1장 → 추가 사진 요청 → auto_photo.py가 지정 사진 제출 → 재개 → 완료
+PHOTOS = {"complete": [("PCB", AGENT / "app/samples/pcb_sample.jpg"), ("MOTOR", AGENT / "app/samples/mech_sample.jpg")],
+          "photo": [("MOTOR", Path(__file__).parent / "designated/motor_no_defect.jpg")]}[SCENARIO]
+
+
+class Client:
+    def __init__(self, user):
+        self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.token = self.call("GET", "/api/auth/csrf")["token"]
+        self.call("POST", "/api/auth/login", urllib.parse.urlencode({"username": user, "password": os.environ.get("LOGIN_PASSWORD", "1234")}).encode(),
+                  "application/x-www-form-urlencoded")
+        self.token = self.call("GET", "/api/auth/csrf")["token"]
+
+    def call(self, method, path, data=None, ctype="application/json"):
+        headers = {"Content-Type": ctype}
+        if method != "GET":
+            headers["X-CSRF-TOKEN"] = self.token
+        if data is not None and not isinstance(data, bytes):
+            data = json.dumps(data, ensure_ascii=False).encode()
+        with self.http.open(urllib.request.Request(BASE + path, data=data, method=method, headers=headers), timeout=30) as r:
+            return json.load(r)
+
+
+def intake(c):
+    b = "b-" + uuid.uuid4().hex
+    data = {"productId": "1", "symptoms": "충전이 안 되고 바퀴 모터에서 소음", "errorCodes": ["E05"], "firmware": "1.2",
+            "userInput": {"technicianNote": "펌웨어 업데이트 후부터 그렇다고 함"}}
+    parts = [f'--{b}\r\nContent-Disposition: form-data; name="data"\r\nContent-Type: application/json\r\n\r\n'.encode(),
+             json.dumps(data, ensure_ascii=False).encode(), b"\r\n"]
+    for target, path in PHOTOS:
+        parts += [f'--{b}\r\nContent-Disposition: form-data; name="files"; filename="{path.name}"\r\nContent-Type: image/jpeg\r\n\r\n'.encode(),
+                  path.read_bytes(), b"\r\n"]
+    query = "?" + "&".join(f"targets={t}" for t, _ in PHOTOS)
+    parts.append(f"--{b}--\r\n".encode())
+    return c.call("POST", "/api/repairs" + query, b"".join(parts), "multipart/form-data; boundary=" + b)
+
+
+def main():
+    c = Client("tech1")
+    created = intake(c)
+    repair = created["repairId"]
+    print(f"접수 완료: repairId={repair} taskId={created['taskId']} status={created['status']}")
+    deadline, last = time.monotonic() + 240, None
+    while time.monotonic() < deadline:
+        d = c.call("GET", f"/api/repairs/{repair}/diagnosis")
+        if d.get("stage") != last or d["status"] != "RUNNING":
+            print(f"  상태 {d['status']:14} stage={d.get('stage')}")
+            last = d.get("stage")
+        if d["status"] in ("SUCCEEDED", "FAILED"):
+            break
+        time.sleep(2)
+    print("\n== 진단 결과 (GET /api/repairs/{id}/diagnosis) ==")
+    r = d.get("result") or {}
+    print(json.dumps({k: r.get(k) for k in ("summary", "topCause", "urgency", "candidates", "agents", "similarCases",
+                                             "inspectionSteps", "repairSteps", "sources")}, ensure_ascii=False, indent=2)[:6000])
+    print("사진 요청 횟수:", d.get("photo_request_count"))
+    tools = c.call("GET", f"/api/repairs/{repair}/diagnosis/tools")
+    print("\n== 도구 실행 이력 ==")
+    for t in tools:
+        print(" -", t.get("agent_type"), t.get("mcp_server"), t.get("tool_name"), t.get("status"))
+    detail = c.call("GET", f"/api/repairs/{repair}")
+    print("\n접수 상태:", detail.get("status"), "/ 조달:", detail.get("procurement_status") or detail.get("procurementStatus"))
+    sys.exit(0 if d["status"] == "SUCCEEDED" else 1)
+
+
+if __name__ == "__main__":
+    main()

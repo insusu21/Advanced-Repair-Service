@@ -1,0 +1,91 @@
+From 775596bf9c8d411c92464e973762a70c8273f567 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E1=84=8B=E1=85=B2=E1=84=80=E1=85=B5=E1=86=AF=E1=84=89?=
+ =?UTF-8?q?=E1=85=A5=E1=86=AB?= <raphael807@naver.com>
+Date: Tue, 20 Oct 2026 20:15:10 +0900
+Subject: [PATCH] =?UTF-8?q?=ED=86=B5=ED=95=A9=20=ED=8C=A8=EC=B9=98:=20?=
+ =?UTF-8?q?=EC=82=AC=EC=A7=84=20target=20=EC=A0=80=EC=9E=A5?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UXSFZLvoeAA5UPPrnz8vrG
+---
+ .../skala/backend/repair/ApiController.java   |  4 ++--
+ .../skala/backend/repair/RepairService.java   | 20 +++++++++++++------
+ 2 files changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/src/main/java/com/skala/backend/repair/ApiController.java b/src/main/java/com/skala/backend/repair/ApiController.java
+index 5084eba..42d727e 100644
+--- a/src/main/java/com/skala/backend/repair/ApiController.java
++++ b/src/main/java/com/skala/backend/repair/ApiController.java
+@@ -22,7 +22,7 @@ public class ApiController {
+     @GetMapping("/auth/me") public Map<String,Object> me() {var u=access.user();var m=new LinkedHashMap<String,Object>();m.put("id",u.id);m.put("username",u.email);m.put("email",u.email);m.put("name",u.name);m.put("active",u.active);m.put("role",u.role);m.put("centerId",u.centerId);return m;}
+     @GetMapping("/products") public Map<String,Object> product(@RequestParam(required=false) String serial,@RequestParam(required=false) String serialNumber) {access.user();return catalog.product(serialNumber!=null?serialNumber:serial);}
+     @PostMapping(value="/repairs",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+-    public ResponseEntity<?> create(@Valid @RequestPart("data") Inputs.Intake input,@RequestPart("files") List<MultipartFile> uploads) {return ResponseEntity.accepted().body(repairs.create(input,uploads));}
++    public ResponseEntity<?> create(@Valid @RequestPart("data") Inputs.Intake input,@RequestPart("files") List<MultipartFile> uploads,@RequestParam(value="targets",required=false) List<String> targets) {return ResponseEntity.accepted().body(repairs.create(input,uploads,targets));}
+     @GetMapping("/repairs") public Map<String,Object> list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(required=false) String status,@RequestParam(required=false) String serial) {
+         return queries.list(page,size,status,serial);
+     }
+@@ -34,7 +34,7 @@ public class ApiController {
+     @GetMapping("/repairs/{id}/diagnosis") public Map<String,Object> diagnosis(@PathVariable Long id) {return queries.diagnosis(id);}
+     @GetMapping("/repairs/{id}/diagnosis/tools") public List<Map<String,Object>> tools(@PathVariable Long id) {return queries.tools(id);}
+     @PostMapping(value="/repairs/{id}/attachments",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+-    public Map<String,Object> upload(@PathVariable Long id,@RequestParam Long requestId,@RequestPart MultipartFile file) {return repairs.upload(id,requestId,file);}
++    public Map<String,Object> upload(@PathVariable Long id,@RequestParam Long requestId,@RequestPart MultipartFile file,@RequestParam(required=false) String target) {return repairs.upload(id,requestId,file,target);}
+     @GetMapping("/attachments/{id}") public ResponseEntity<Resource> download(@PathVariable Long id) {
+         return attachment(queries.attachment(id,false),files);
+     }
+diff --git a/src/main/java/com/skala/backend/repair/RepairService.java b/src/main/java/com/skala/backend/repair/RepairService.java
+index 39dc96f..23c3416 100644
+--- a/src/main/java/com/skala/backend/repair/RepairService.java
++++ b/src/main/java/com/skala/backend/repair/RepairService.java
+@@ -11,13 +11,15 @@ import java.util.*;
+ public class RepairService {
+     final Store db;final Access access;final LocalFiles files;final Catalog catalog;final String commands;
+     public RepairService(Store db,Access access,LocalFiles files,Catalog catalog,@Value("${app.commands-topic}") String commands) {this.db=db;this.access=access;this.files=files;this.catalog=catalog;this.commands=commands;}
+-    @Transactional public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads) {
++    @Transactional public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads) {return create(data,uploads,null);}
++    // [통합 패치] 사진마다 부위(target)를 받는다. 프론트 PCB/MECHANICAL → DB 규칙 PCB/MOTOR
++    @Transactional public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads,List<String> targets) {
+         access.technician();var user=access.user();
+         var product=db.one("SELECT serial_number FROM product WHERE id=?",data.productId());var snapshot=catalog.product((String)product.get("serial_number"));
+         Long id=db.insert("INSERT INTO repair_case(case_number,center_id,product_id,technician_id,symptom,error_codes,firmware_version,user_input,product_snapshot) VALUES (?,?,?,?,?,?::jsonb,?,?::jsonb,?::jsonb)",
+             "R-"+UUID.randomUUID(),user.centerId,data.productId(),user.id,data.symptoms(),Json.write(data.errorCodes()),data.firmware(),Json.raw(data.userInput()),Json.write(snapshot));
+         if(uploads==null || uploads.isEmpty() || uploads.size()>10) throw ApiError.bad("INITIAL_FILES_REQUIRED_MAX_10");
+-        for(var file:uploads) addFile(id,null,file);
++        for(int i=0;i<uploads.size();i++) addFile(id,null,uploads.get(i),targets==null||i>=targets.size()?null:targets.get(i));
+         db.audit(user.email,"REPAIR_CREATED",id,data);return start(id,null);
+     }
+     @Transactional public Map<String,Object> start(Long repair) {return start(repair,null);}
+@@ -31,16 +33,22 @@ public class RepairService {
+         db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);command(repair,task,"DIAGNOSIS_REQUESTED",null,List.of());
+         db.event(repair,"DIAGNOSIS_QUEUED",Map.of("taskId",task));return Map.of("repairId",repair,"taskId",task,"status","QUEUED");
+     }
+-    @Transactional public Map<String,Object> upload(Long repair,Long request,MultipartFile file) {
++    @Transactional public Map<String,Object> upload(Long repair,Long request,MultipartFile file) {return upload(repair,request,file,null);}
++    @Transactional public Map<String,Object> upload(Long repair,Long request,MultipartFile file,String target) {
+         access.technician();access.repair(repair);var task=db.one("SELECT * FROM diagnosis_job WHERE case_id=? FOR UPDATE",repair);
+         if(!task.get("status").equals("WAITING_INPUT") || request==null) throw ApiError.conflict("NOT_WAITING_INPUT");
+         var req=db.one("SELECT * FROM photo_request WHERE id=? AND job_id=?",request,task.get("id"));
+-        if(!req.get("status").equals("OPEN")) throw ApiError.conflict("REQUEST_ALREADY_FULFILLED");return addFile(repair,request,file);
++        if(!req.get("status").equals("OPEN")) throw ApiError.conflict("REQUEST_ALREADY_FULFILLED");return addFile(repair,request,file,target);
+     }
+-    Map<String,Object> addFile(Long repair,Long request,MultipartFile file) {
++    static String target(String raw) {
++        if(raw==null) return "GENERAL";
++        return switch(raw.trim().toUpperCase()) {case "PCB"->"PCB";case "MECHANICAL","MOTOR"->"MOTOR";case "SW"->"SW";default->"GENERAL";};
++    }
++    Map<String,Object> addFile(Long repair,Long request,MultipartFile file) {return addFile(repair,request,file,null);}
++    Map<String,Object> addFile(Long repair,Long request,MultipartFile file,String target) {
+         var saved=files.save(file);String name=Optional.ofNullable(file.getOriginalFilename()).orElse("attachment");if(name.length()>255) name=name.substring(name.length()-255);
+         String kind=saved.mime().startsWith("image/")?"IMAGE":saved.mime().equals("text/plain")?"LOG":"DOCUMENT";
+-        Long id=db.insert("INSERT INTO attachment(case_id,request_id,uploader_id,kind,target,object_key,original_name,mime_type,byte_size,sha256) VALUES (?,?,?,?,'GENERAL',?,?,?,?,?)",repair,request,access.user().id,kind,saved.key(),name,saved.mime(),saved.size(),saved.hash());
++        Long id=db.insert("INSERT INTO attachment(case_id,request_id,uploader_id,kind,target,object_key,original_name,mime_type,byte_size,sha256) VALUES (?,?,?,?,?,?,?,?,?,?)",repair,request,access.user().id,kind,target(target),saved.key(),name,saved.mime(),saved.size(),saved.hash());
+         db.audit(access.user().email,"ATTACHMENT_CREATED",id,Map.of("attachmentId",id));return Map.of("attachmentId",id,"mimeType",saved.mime(),"size",saved.size(),"sha256",saved.hash());
+     }
+     @Transactional public Map<String,Object> resume(Long repair,Inputs.Resume input) {
+-- 
+2.55.0
+
