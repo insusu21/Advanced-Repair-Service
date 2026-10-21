@@ -51,6 +51,7 @@ skeleton-agent/
 │   ├── pcb/                PCB 결함 MCP (YOLO, stdio). 워커가 부를 때마다 실행
 │   └── mechanical/         금속 표면 결함 MCP (YOLO, HTTP 9104). 미리 켜 둔다
 ├── contract/               Spring 팀과의 Kafka 계약 (backend 레포에서 복사)
+├── integration/            백엔드·에이전트·프론트 통합 기록 (실행법, 변경메모, 패치, 시연 사진)
 ├── tests/                  판단 규칙 테스트 (uv run pytest)
 ├── docker-compose.yml      Kafka
 ├── setup.sh
@@ -73,18 +74,21 @@ Kafka diagnosis.events.v2    (우리 → Spring)  +  worker/reports/*.md
 
 | MCP | 상태 |
 |---|---|
-| pcb (`mcp_servers/pcb`) | 실제. 팀원 pcb_agent 서버 그대로 |
-| mechanical (`mcp_servers/mechanical`) | 실제. 도구 2개: `detect_surface_defects`(강판 결함 모델, 일반 사진은 정확도 낮음) + `detect_dents`(찌그러짐·파손) |
-
-`detect_dents`는 자동차 외판 모델(`vineetsarpal/yolov11n-car-damage`)을 쓴다. 원래 결함 이름이 `front-bumper-dent` 같은 자동차 부위라
-GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakage`로 바꿔 내보낸다. 로봇청소기용 모델이 생기면 `DENT_REPO`, `DENT_FILE`만 바꾼다.
+| pcb (`mcp_servers/pcb`) | 실제. 팀원 pcb_agent 서버 그대로. 결함 6종 |
+| mechanical (`mcp_servers/mechanical`, 9104) | 실제. 도구 2개: `detect_surface_defects`(강판 결함 모델) + `detect_dents`(찌그러짐·파손) |
 | rag ([Rag_mcp 레포](https://github.com/skala-ai-agent-team6/Rag_mcp), 8014) | 실제. 증상 글 + PCB 라벨로 과거 수리 사례·라벨 정의 검색. 꺼져 있으면 검색 없이 진행. 찌그러짐 라벨은 보내지 않음 |
+
+사진 종류는 워커 안에서 `PCB / MECH / OTHER`로 부르고, Spring에 보낼 때는 DB 기준 `PCB / MOTOR`로 바꾼다(`graph.py` `mech_mcp`).
+
+주의: 기계 모델 두 개 모두 로봇청소기 사진으로 학습한 모델이 아니다.
+- `detect_surface_defects`: NEU 강판 흑백 클로즈업 모델. 일반 사진은 정확도가 낮다.
+- `detect_dents`: 자동차 외판 모델(`vineetsarpal/yolov11n-car-damage`). 결과 이름은 `dent` / `breakage`로 바꿔 내보내고, 원래 자동차 부위명은 `raw_label`에 같이 담는다. 자동차가 아닌 사진 30장 중 20장에서 결함을 냈다(오탐 많음). 모델을 바꿀 땐 `DENT_REPO`, `DENT_FILE`만 바꾼다.
 
 ## Spring과 붙일 때
 
 - `.env`에 `INTERNAL_SERVICE_TOKEN`, `SPRING_BASE_URL` 넣기 (사진 다운로드용)
 - backend는 `--app.mock-ai.enabled=false`로 켠다 (안 끄면 Spring의 가짜 AI도 같이 답함)
-- 이 레포의 Kafka 대신 backend의 `docker compose up`을 써도 된다 (같은 9092 포트라 둘 중 하나만)
+- 이 레포의 Kafka 대신 backend의 `docker compose up`을 써도 된다 (같은 9092 포트라 둘 중 하나만 켠다)
 
 ## 남은 일
 
@@ -95,6 +99,9 @@ GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakag
 | 하네스 | 처리 기록을 DB로, 재시도 중복 이벤트 정리 | `main.py` `done`, `handle` |
 | 오케스트레이션 + Spring | 추천 부품 partId | `graph.py` `report` |
 | 전체 | 예시 사진 대체를 운영에서 끄기 | `tools.py` `load_photos` |
+| 기계 MCP | 찌그러짐 모델 교체 (GPT 비전 또는 PatchCore 후보) | `mcp_servers/mechanical/server.py` |
+| 오케스트레이션 | 사진을 항상 `image/jpeg`로 보냄 → 실제 형식으로 | `tools.py` `classify_photo` |
+| 하네스 | 마지막 실패 뒤에도 재시도 대기(4초)를 함 | `main.py` `handle` |
 | 프론트 + Spring | `user_input`에 넣을 이름 합의 (지금은 customerDescription) | `graph.py` `split_text` |
 
 ## 참고
@@ -104,4 +111,9 @@ GPT가 "자동차 얘기라 무시"해 버려서, 서버에서 `dent` / `breakag
 - 박스 그린 사진은 각 MCP 폴더의 `results/`에 저장된다 (git 제외).
 
 ## 통합 버전 (백엔드·에이전트·프론트)
-`integration/README.md` — 실행법, `integration/변경메모.md` — 팀원 코드 수정 내역, `integration/patches/` — 각 레포 패치
+| 문서 | 내용 |
+|---|---|
+| `integration/README.md` | 통합 실행법. 통합 전용 Postgres 5434, Kafka 9096을 쓴다 |
+| `integration/수정·삭제_요약.md` | 고치거나 잘라낸 것 한 줄 요약 |
+| `integration/변경메모.md` | 팀원 코드 수정 내역과 이유 |
+| `integration/patches/` | 각 레포 패치 (팀 레포 main에는 아직 안 들어감) |
