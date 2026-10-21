@@ -10,4 +10,4 @@ uv sync
 (cd mcp_servers/business && uv sync)
 (cd Rag_mcp && uv sync)
 (cd frontend && npm ci)
-echo "완료. .env 에 OPENAI_API_KEY, backend/.env 에 비밀값을 넣고 README의 '실행'을 따라 하세요."
+echo "완료. 레포 맨 위 .env 에 OPENAI_API_KEY 를 넣고 ./run.sh (backend/.env 는 비워 둬도 됨)"
