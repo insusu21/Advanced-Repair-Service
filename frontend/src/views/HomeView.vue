@@ -2,7 +2,7 @@
 /* 홈 = 마이페이지 겸 오늘의 업무 목록. 역할별로 "지금 처리해야 할 일" 을 먼저 보여준다. */
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Camera, UserCheck, FileCheck2, CircleCheck, ClipboardCheck, PlusCircle, Package, BarChart3, ArrowRight } from 'lucide-vue-next'
+import { Camera, UserCheck, FileCheck2, CircleCheck, ClipboardCheck, Package, BarChart3, ArrowRight } from 'lucide-vue-next'
 import StatCard from '@/components/common/StatCard.vue'
 import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
@@ -56,7 +56,6 @@ const greeting = computed(() => {
         <h1>{{ greeting }}, {{ auth.user?.name }}님</h1>
         <p class="sub">{{ auth.user?.branch }} · {{ auth.role ? ROLE_LABEL[auth.role] : '' }}</p>
       </div>
-      <RouterLink v-if="isTech" to="/repairs/new" class="btn btn-primary btn-lg"><PlusCircle :size="22" /> 신규 수리 접수</RouterLink>
       <RouterLink v-if="isQuality" to="/dashboard" class="btn btn-lg"><BarChart3 :size="22" /> 품질 대시보드</RouterLink>
     </div>
 
@@ -97,9 +96,7 @@ const greeting = computed(() => {
           <h2>최근 수리 건</h2>
         </div>
         <div v-if="list.loading && !list.items.length" class="card-body"><SkeletonBlock :lines="5" :height="40" /></div>
-        <StateView v-else-if="!recent.length && !list.error" state="empty" title="접수된 수리 건이 없습니다" compact>
-          <RouterLink v-if="isTech" to="/repairs/new" class="btn btn-primary"><PlusCircle :size="18" /> 첫 수리 접수하기</RouterLink>
-        </StateView>
+        <StateView v-else-if="!recent.length && !list.error" state="empty" title="접수된 수리 건이 없습니다" compact />
         <RepairTable v-else :items="recent" :role="auth.role" :show-tech="false" />
       </section>
     </template>
