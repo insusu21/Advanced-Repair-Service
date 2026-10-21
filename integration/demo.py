@@ -7,7 +7,7 @@ AGENT = Path.home() / "Downloads/16주차_AI_Agent_생성/팀레포/agent-server
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 and __name__ == "__main__" else "complete"
 # complete: 결함이 보이는 사진 2장 → 바로 진단 완료
 # photo:    결함이 안 보이는 기계 사진 1장 → 추가 사진 요청 → auto_photo.py가 지정 사진 제출 → 재개 → 완료
-PHOTOS = {"complete": [("PCB", AGENT / "app/samples/pcb_sample.jpg"), ("MOTOR", AGENT / "app/samples/mech_sample.jpg")],
+PHOTOS = {"complete": [("PCB", Path(__file__).parent / "designated/pcb_sample.jpg"), ("MOTOR", Path(__file__).parent / "designated/mech_sample.jpg")],
           "photo": [("MOTOR", Path(__file__).parent / "designated/motor_no_defect.jpg")]}[SCENARIO]
 
 

@@ -13,7 +13,7 @@
 - 접수 QUEUED → 진단 SUCCEEDED (약 7초) → 접수 DIAGNOSED, 조달 PENDING
 - 에이전트가 Spring `/internal/attachments/{id}`에서 실제 사진을 받아 분석 (예시 사진 대체 0회)
 - 도구 이력(Spring DB): PCB pcb-detector · MOTOR mechanical-mcp · RAG(표시는 mock, 실제는 Rag_mcp)
-- 에이전트 리포트 md: `agent-server/.local/reports/task-1_고장리포트.md`
+- 에이전트 리포트 md: `agent-server/worker/reports/`
 
 ## 구성
 | 구성 | 위치 | 포트 |
@@ -21,10 +21,10 @@
 | Postgres 17 (통합 전용) | docker `integ-postgres` | 5434 |
 | Kafka 4.1.1 (통합 전용) | docker `integ-kafka` | 9096 |
 | Spring (dev, mock AI 끔) | `backend` 브랜치 `local/integration` | 8080 |
-| 에이전트 워커 | `agent-server` 브랜치 `feat/skeleton-merge` | — |
+| 에이전트 워커 | `agent-server` 브랜치 `local/integration-v2` (홍은비 harness 기준) | — |
 | 기계 MCP | `skeleton-agent/mcp_servers/mechanical` | 9104 |
 | PCB MCP (stdio) | `MCP_Error_check/pcb_agent` | — |
-| RAG MCP | `Rag_mcp` (`repair-mcp serve rag`) | 8014 |
+| RAG·해석 MCP 4개 | `Rag_mcp` (`repair-mcp serve observation/pcb/damage/rag`, 처음엔 `repair-mcp index`) | 8011~8014 |
 | 프론트 (Vite, 실서버 모드) | `frontend` 브랜치 `local/integration` | 5173 |
 
 ## 다시 띄우기
@@ -39,10 +39,10 @@ cd backend   # 터미널 1
 SPRING_PROFILES_ACTIVE=dev DB_URL=jdbc:postgresql://localhost:5434/repair KAFKA_BOOTSTRAP_SERVERS=localhost:9096 \
   ./gradlew bootRun --args='--app.mock-ai.enabled=false'
 
-cd agent-server   # 터미널 2 (기계 MCP 9104, RAG 8014 먼저)
-KAFKA_BOOTSTRAP_SERVERS=localhost:9096 SPRING_BASE_URL=http://localhost:8080 AGENT_TOOL_MODE=live \
+cd agent-server   # 터미널 2 (기계 MCP 9104, Rag_mcp 8011~8014 먼저)
+KAFKA_BOOTSTRAP_SERVERS=localhost:9096 SPRING_BASE_URL=http://localhost:8080 \
   PCB_MCP_SCRIPT=../../MCP_Error_check/pcb_agent/mcp_server.py PCB_MCP_PYTHON=../../MCP_Error_check/pcb_agent/.venv/bin/python \
-  env -u OPENAI_API_KEY uv run --env-file ../../.env --extra pcb --extra live python -m app.kafka_worker
+  env -u OPENAI_API_KEY uv run --env-file ../../.env python -m worker.main
 
 python3 integration/auto_photo.py   # 터미널 3: 프론트 대역 (요청 후 60초 동안 아무도 안 올리면 지정 사진 제출)
 
@@ -59,13 +59,11 @@ python3 integration/demo.py photo  # 터미널 4: complete | photo (같은 셸�
 | 파일 | 대상 | 내용 |
 |---|---|---|
 | `backend-0001-사진target저장.patch` | backend (박시현) | 접수 `POST /api/repairs?targets=PCB&targets=MECHANICAL`, 추가 사진 `?target=`. DB 규칙에 맞게 MECHANICAL → MOTOR로 저장. 없으면 기존처럼 GENERAL |
-| `agent-server-0001-skeleton통합.patch` | agent-server (홍은비) | Kafka 워커·실제 도구·GPT 리포트·md (홍은비 파일은 hook 2곳만) |
-| `agent-server-0002-MOTOR-target-MECHANICAL.patch` | agent-server | (0003에서 되돌림) MOTOR → MECHANICAL 변환 |
+| `agent-server-v2-0001-.patch` | agent-server (홍은비 `feat/harness-hardening` 위) | 점수순, 화면 필드(박스·유사사례), 진행 단계 |
 | `backend-0002-API.patch` | backend | 진단 확인·반려 API `POST /api/repairs/{id}/approval` 추가 |
 | `frontend-0002-API.patch` | frontend | 진단 확인 연결, 쓸모없는 버튼 삭제, 수정 이유 주석 |
-| `agent-server-0004-.patch` | agent-server | 수정 이유 주석 |
+| `frontend-0004-.patch` | frontend | 에이전트 단계 이름 매핑 |
 | `frontend-0001-MOTOR-target-v2.patch` | frontend (최세민) | 사진 종류 MECHANICAL → MOTOR, 접수·추가 사진에 target 전송, 진단 화면이 에이전트 v2 필드(후보 코드·근거, 박스, 유사사례, 점검·수리 순서, 출처) 사용. 후보를 result.candidates에서 읽게 수정(정규화 테이블은 이름이 달라 원인이 비던 문제) |
-| `agent-server-0003-MOTOR.patch` | agent-server | MOTOR 통일, 사진 요청 열기, 점수순·원인 코드명·리포트 새 필드 (홍은비 파일 수정 포함) |
 
 ## 프론트 대역 (`auto_photo.py`)
 프론트에 추가 사진 화면이 생기기 전 임시 장치. WAITING_INPUT 접수를 찾아 요청 부위에 맞는 지정 사진(`designated/PCB.jpg`, `designated/MOTOR.jpg`, GENERAL이면 둘 다)을 Spring API로 올리고 재개한다. 실제 프론트가 할 호출과 같다.
@@ -80,4 +78,4 @@ python3 integration/demo.py photo  # 터미널 4: complete | photo (같은 셸�
 2. **사례 번역 문장**에 "과거 유사 사례에서는…" 꾸밈말이 아직 붙는다. 사례 기반 후보(배터리 등)는 GPT가 판단할 때만 생긴다.
 3. **에러코드 해석**(`errorCodes[]`)은 출처(에러코드표)가 없어 빈 배열.
 4. **business-mcp** — Spring dev는 MockBusinessMcp 사용 중. 실제 business-mcp는 도구 이름과 DB 직접 접속 문제.
-5. 홍은비 코드 변경점(models·workflow·backend_v2·테스트 3개)은 patches/agent-server-0003에 모았다. 홍은비 확인 필요.
+5. 에이전트 수정분(patches/agent-server-v2-0001)은 홍은비 확인 필요.

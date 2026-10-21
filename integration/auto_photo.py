@@ -37,7 +37,9 @@ def answer(c, repair):
     for req in [r for r in detail.get("photoRequests", []) if r.get("submitted_at") is None]:
         if (now - datetime.fromisoformat(req["created_at"].replace("Z", "+00:00"))).total_seconds() < GRACE:
             continue
-        targets = ["PCB", "MOTOR"] if req["target"] == "GENERAL" else [req["target"]]
+        # 에이전트가 부위 이름(wheel 등)으로 요청할 수 있다. PCB 외 부위는 기계 사진으로, GENERAL은 둘 다
+        t = req["target"]
+        targets = ["PCB", "MOTOR"] if t == "GENERAL" else ["PCB"] if t == "PCB" else ["MOTOR"]
         ids = [upload(c, repair, req["id"], t) for t in targets]
         c.call("POST", f"/api/repairs/{repair}/diagnosis/resume",
                {"requestId": req["id"], "submissionKey": str(uuid.uuid4()), "attachmentIds": ids})
