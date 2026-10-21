@@ -21,9 +21,14 @@
 ```
 - `.env`: `OPENAI_API_KEY` 입력
 - `backend/.env`: `DB_PASSWORD`, `INTERNAL_SERVICE_TOKEN`(32자 이상), `DEV_PASSWORD`(12자 이상) 입력
-- RAG 인덱스: `cd Rag_mcp && uv run --env-file ../.env repair-mcp index`
+- RAG 인덱스: `cd Rag_mcp && env -u OPENAI_API_KEY uv run --env-file ../.env repair-mcp index`
 
 ## 실행 (터미널 7개, 모두 레포 루트에서 시작)
+주의
+- `env -u OPENAI_API_KEY`: 셸에 옛 키가 남아 있으면 `.env` 키보다 먼저 쓰여 401이 난다. 그래서 뺀다.
+- 5432·9092·8080·5173·9104·8011~8014 포트가 비어 있어야 한다. 확인: `lsof -nP -iTCP:5432 -sTCP:LISTEN` (로컬 Postgres, 다른 Kafka 컨테이너가 자주 잡고 있다)
+- 워커는 레포 루트 `.env` 값을 셸 환경변수보다 먼저 쓴다. 포트를 바꿀 때는 `.env`에서 바꾼다.
+
 ```bash
 # 1. DB·Kafka
 cd backend && set -a && . ./.env && set +a && docker compose up -d --wait
@@ -36,7 +41,7 @@ cd mcp_servers/mechanical && uv run python server.py
 
 # 4. Rag_mcp 4개
 cd Rag_mcp && for s in observation:8011 pcb:8012 damage:8013 rag:8014; do \
-  uv run --env-file ../.env repair-mcp serve ${s%%:*} --transport http --port ${s##*:} & done; wait
+  env -u OPENAI_API_KEY uv run --env-file ../.env repair-mcp serve ${s%%:*} --transport http --port ${s##*:} & done; wait
 
 # 5. 에이전트 워커 (DEMO_FORCE_PHOTO=1: 첫 진단은 무조건 추가 사진 요청, 시연용)
 set -a && . backend/.env && set +a && DEMO_FORCE_PHOTO=1 env -u OPENAI_API_KEY uv run --env-file .env python -m worker.main
