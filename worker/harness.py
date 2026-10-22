@@ -11,7 +11,7 @@ import hashlib
 import inspect
 import math
 from pathlib import Path
-from langgraph.errors import GraphRecursionError
+from langgraph.errors import GraphInterrupt, GraphRecursionError
 from langgraph.types import Command
 from .observability import context, log_event
 from time import monotonic
@@ -190,6 +190,9 @@ def observed(fn):
         started = monotonic()
         try:
             return await fn(state, config)
+        except GraphInterrupt:
+            record("node.paused", node=fn.__name__)   # 추가 자료를 기다리는 정상 멈춤이다
+            raise
         except Exception as exc:
             record("node.failed", node=fn.__name__, error_type=type(exc).__name__)
             raise
