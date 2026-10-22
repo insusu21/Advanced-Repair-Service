@@ -1,6 +1,8 @@
 # 로봇청소기 고장 진단·수리 지원 AI Agent (SKALA 6팀 통합본)
 
 기사 접수(사진) → Spring → Kafka → LangGraph 에이전트(PCB·기계·RAG MCP + GPT) → Spring → 프론트 진단 화면 → 진단 확인 → 부품 재고·발주 → 수리 리포트 → 종결까지 돈다.
+> **브랜치:** `dev` = 홍은비 에이전트(`agent/feat/harness-hardening`) 원본 그대로 + 백엔드·프론트·MCP를 붙인 것. 제출본(부품 확인 Agent·사례 저장 추가)은 `main`.
+
 팀원 코드를 합치면서 고친 것: **[docs/개조내역.md](docs/개조내역.md)** · 진행 상황: **[docs/진행사항.md](docs/진행사항.md)** · 에이전트 상세(하네스·LangSmith·오류 처리): **[worker/AGENT.md](worker/AGENT.md)**
 
 ## 빠른 실행 (처음 받는 사람)
