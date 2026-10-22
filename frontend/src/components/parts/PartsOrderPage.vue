@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* =========================================================================
- * 진단 노트 2쪽: 부품 발주
+ * 진단 노트 2쪽: 부품 발주 (FEATURES.stockReservation 이면 '출장 준비 · 부품' — 맨 위에 출장 전 챙길 부품 · 재고 예약)
  *  위: 교체 부품 리스트 — AI 추천 부품마다 재고 분기 (창고 재고로 수리 가능 / 발주 필요)
  *  아래: 주문하기 — 사람이 부품·수량을 골라 최종 요청 (POST /repairs/{id}/orders)
  * AI 는 추천만 하며, 확인 모달을 거쳐 담당자가 요청해야 주문이 등록된다.
@@ -8,6 +8,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Factory, Warehouse, Send, Plus, CircleAlert, ShoppingCart, PackageCheck, Info } from 'lucide-vue-next'
 import AiBadge from '@/components/common/AiBadge.vue'
+import TripPartsSection from '@/components/parts/TripPartsSection.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
 import StateView from '@/components/common/StateView.vue'
@@ -15,6 +16,7 @@ import { useOrderStore } from '@/stores/orders'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { toErrorMessage } from '@/api'
+import { FEATURES } from '@/api/features'
 import { ORDER_STATUS_META } from '@/constants/status'
 import { formatDate, formatDateTime, formatNumber } from '@/utils/format'
 import { isCompatible } from '@/utils/parts'
@@ -29,6 +31,12 @@ const isTech = computed(() => auth.role === 'TECHNICIAN')
 onMounted(() => void orders.fetchForRepair(props.repair.id))
 // 진단 확인 직후 Mock 은 발주안을 새로 만든다 → 다시 받기
 watch(() => props.diagnosis.technicianDecision.state, () => void orders.fetchForRepair(props.repair.id))
+
+/** 출장 준비에서 재고 부족 → 주문하기로 이동 (해당 부품 체크) */
+function goOrder(partId: string) {
+  if (sel[partId]) sel[partId].checked = true
+  document.getElementById('order-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 /* ---------- 부품 줄 ---------- */
 interface Line {
@@ -155,6 +163,9 @@ const stepIdx = (o: PurchaseOrder) => STEPS.findIndex((s) => s.status === o.stat
 
 <template>
   <div class="stack page2">
+    <!-- 출장 전 챙길 부품 · 재고 예약 (실서버 API 없으면 숨김) -->
+    <TripPartsSection v-if="FEATURES.stockReservation" :repair-id="repair.id" :can-act="isTech" @changed="orders.fetchForRepair(repair.id)" @go-order="goOrder" />
+
     <div v-if="orders.loading && !orders.parts.length" class="card-pad"><SkeletonBlock :lines="4" :height="56" /></div>
 
     <template v-else>
@@ -230,7 +241,7 @@ const stepIdx = (o: PurchaseOrder) => STEPS.findIndex((s) => s.status === o.stat
       </section>
 
       <!-- 주문하기 (사람이 최종 주문) -->
-      <section class="order">
+      <section id="order-section" class="order">
         <h3 class="h"><ShoppingCart :size="20" /> 주문하기</h3>
         <p v-if="!isTech" class="callout tone-info"><Info :size="18" /> 주문 요청은 담당 서비스센터 기사만 할 수 있습니다. (조회 전용)</p>
         <template v-else>
@@ -389,7 +400,9 @@ const stepIdx = (o: PurchaseOrder) => STEPS.findIndex((s) => s.status === o.stat
   color: #fff;
 }
 .order {
+  scroll-margin-top: calc(var(--topbar-h) + 16px);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 16px;
   border: 2px solid var(--navy-100);
@@ -410,6 +423,8 @@ const stepIdx = (o: PurchaseOrder) => STEPS.findIndex((s) => s.status === o.stat
 .add .select {
   flex: 1 1 240px;
   width: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .submit {
   justify-content: flex-end;

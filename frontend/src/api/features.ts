@@ -16,4 +16,15 @@ export const FEATURES = {
   dashboardExtras: USE_MOCK,
   /** 알림 API */
   notifications: USE_MOCK,
+  /** 접수 시 출장 방문 정보·개인정보 동의를 실서버로 전송 (백엔드 필드가 생기면 true 로만 바꾸면 됨).
+   *  Mock 은 이 값과 관계없이 저장한다. 어떤 경우에도 userInput(AI 입력)에는 넣지 않는다 */
+  visitInfo: false,
+  /** 접수 사진 품질 검사 API (실서버는 아직 없음 → false 면 검사 없이 업로드만). Mock 은 파일 이름으로 흉내 */
+  photoQualityCheck: USE_MOCK,
+  /** 보증 판정(무상/유상) 카드 — 실서버 API 없음 → false 면 진단 리포트에서 카드를 숨김 */
+  warranty: USE_MOCK,
+  /** 출장 준비 · 재고 예약(예약/취소/출고/이력) — 실서버 API 없음 → false 면 예약 UI 를 숨기고 기존 부품 발주 화면만 */
+  stockReservation: USE_MOCK,
+  /** 소비자용 수리 진행 조회 (/track) — 실서버 API 없음 → false 면 조회 화면에 준비 중 안내, 접수 완료 화면의 링크 숨김 */
+  customerReport: USE_MOCK,
 } as const

@@ -551,7 +551,7 @@ const faultText = (c: ReportContent) =>
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 16px;
+  gap: var(--gap);
   align-items: start;
 }
 .human-edge {

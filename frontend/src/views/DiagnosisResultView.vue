@@ -2,8 +2,8 @@
 /* =========================================================================
  * AI 진단 리포트 (서비스 핵심 화면) — '노트(공책)' 형태
  *  종이 한 장씩 넘겨 보는 구조. 페이지는 URL ?page=1|2 로 유지, ←/→ 키로 넘김
- *  1쪽 결론 요약: 결론 · AI 원인 후보 | 유사 사례(MCP) / 사진별 분석 카드 / 상세 보기(접이식) / 처리 버튼(하단 고정)
- *  2쪽 부품 발주: 교체 부품 리스트 + 주문하기 (진단 확인 전에는 잠금)
+ *  1쪽 결론 요약: 결론 · 보증 판정 · AI 원인 후보 | 유사 사례(MCP) / 사진별 분석 카드 / 상세 보기(접이식) / 처리 버튼(하단 고정)
+ *  2쪽 부품 발주(출장 준비 · 부품): 출장 전 챙길 부품·재고 예약 + 교체 부품 리스트 + 주문하기 (진단 확인 전에는 잠금)
  *  처리: 진단 내용 확인 / 본사 검토 요청 / 진단 반려
  * ========================================================================= */
 import { computed, onBeforeUnmount, onMounted, reactive, watchEffect } from 'vue'
@@ -17,6 +17,7 @@ import RepairSummaryCard from '@/components/repair/RepairSummaryCard.vue'
 import SameSerialHistory from '@/components/repair/SameSerialHistory.vue'
 import PhotoAnalysisCard from '@/components/diagnosis/PhotoAnalysisCard.vue'
 import PartsOrderPage from '@/components/parts/PartsOrderPage.vue'
+import WarrantyCard from '@/components/diagnosis/WarrantyCard.vue'
 import ApprovalHistoryTimeline from '@/components/review/ApprovalHistoryTimeline.vue'
 import AiBadge from '@/components/common/AiBadge.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
@@ -48,7 +49,7 @@ watchEffect(() => {
 /* ---------- 노트 페이지 (?page=1|2) ---------- */
 const PAGES = [
   { no: 1, label: '결론 요약' },
-  { no: 2, label: '부품 발주' },
+  { no: 2, label: FEATURES.stockReservation ? '출장 준비 · 부품' : '부품 발주' },
 ] as const
 const page = computed(() => (route.query.page === '2' ? 2 : 1))
 function go(p: number) {
@@ -244,12 +245,20 @@ const detailSummary = computed(() => {
                 <div class="col">
                   <section class="conclusion" aria-labelledby="h-conc">
                     <h2 id="h-conc" class="h">결론 요약</h2>
-                    <p class="cause">
-                      {{ diagnosis.topCause }}
-                      <span class="badge tone-ai">판단 점수 {{ diagnosis.confidence }}점</span>
-                    </p>
-                    <p v-if="diagnosis.repairMethod[0]" class="todo"><ArrowRight :size="18" /> {{ diagnosis.repairMethod[0] }}</p>
+                    <div class="conc-body">
+                      <div class="conc-text">
+                        <p class="cause">{{ diagnosis.topCause }}</p>
+                        <p v-if="diagnosis.repairMethod[0]" class="todo"><ArrowRight :size="18" /> {{ diagnosis.repairMethod[0] }}</p>
+                      </div>
+                      <p class="big-score" :aria-label="`판단 점수 ${diagnosis.confidence}점`">
+                        <span class="num-xl">{{ diagnosis.confidence }}</span><small>점</small>
+                        <span class="faint">판단 점수</span>
+                      </p>
+                    </div>
                   </section>
+
+                  <!-- 보증 판정 (AI 제안 → 기사 확정). 실서버 API 없으면 숨김 -->
+                  <WarrantyCard v-if="FEATURES.warranty" :repair-id="repair.id" :can-decide="isTech" />
 
                   <section v-if="candidates.length" aria-labelledby="h-cand">
                     <h2 id="h-cand" class="h">AI 원인 후보</h2>
@@ -310,7 +319,7 @@ const detailSummary = computed(() => {
               <div v-if="diagnosis.technicianDecision.state === 'APPROVED' && isTech && repair.status === 'TECHNICIAN_REVIEW'" class="callout tone-success next">
                 <CircleCheck :size="24" />
                 <div class="grow"><strong>다음 단계</strong> 필요 부품의 재고를 확인하고, 수리를 마친 뒤 실제 결과를 입력해 주세요.</div>
-                <button type="button" class="btn btn-lg" @click="go(2)">2쪽 부품 발주 <ArrowRight :size="20" /></button>
+                <button type="button" class="btn btn-lg" @click="go(2)">2쪽 {{ PAGES[1].label }} <ArrowRight :size="20" /></button>
                 <RouterLink :to="`/repairs/${repair.id}/review`" class="btn btn-primary btn-lg">수리 리포트 작성 <ArrowRight :size="20" /></RouterLink>
               </div>
 
@@ -380,7 +389,7 @@ const detailSummary = computed(() => {
             <!-- ---------- 2쪽: 부품 발주 ---------- -->
             <template v-else>
               <div class="row between p2-head">
-                <h2 class="h">부품 발주</h2>
+                <h2 class="h">{{ PAGES[1].label }}</h2>
                 <RouterLink v-if="isTech && repair.status === 'TECHNICIAN_REVIEW'" :to="`/repairs/${repair.id}/review`" class="btn btn-primary">수리 리포트 작성 <ArrowRight :size="18" /></RouterLink>
               </div>
               <PartsOrderPage v-if="partsUnlocked" :repair="repair" :diagnosis="diagnosis" />
@@ -432,13 +441,17 @@ const detailSummary = computed(() => {
 /* ---------- 노트 ---------- */
 .notebook {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
+}
+.notebook {
+  gap: 14px;
 }
 .nb-bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
   padding: 0 4px;
 }
 .nav {
@@ -448,20 +461,26 @@ const detailSummary = computed(() => {
 .tabs {
   display: flex;
   gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 46px;
-  padding: 8px 18px;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
-  background: var(--surface-2);
+  min-height: 44px;
+  padding: 6px 18px 6px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--text-2);
   font-weight: 700;
   cursor: pointer;
+}
+.tab:hover:not(.on) {
+  background: var(--blue-50);
 }
 .tab .no {
   display: inline-grid;
@@ -473,18 +492,16 @@ const detailSummary = computed(() => {
   font-size: var(--fs-xs);
 }
 .tab.on {
-  background: var(--surface);
-  color: var(--navy-800);
-  position: relative;
-  top: 1px;
+  background: var(--ink);
+  color: #fff;
 }
 .tab.on .no {
-  background: var(--navy-800);
+  background: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 .tab:focus-visible {
-  outline: 3px solid var(--navy-600);
-  outline-offset: -3px;
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
 }
 .ver {
   align-self: center;
@@ -495,13 +512,14 @@ const detailSummary = computed(() => {
 .paper {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
-  padding: 28px 32px 20px;
+  padding: 32px 36px 22px;
   background: #fff;
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px var(--radius) var(--radius) var(--radius);
-  box-shadow: 0 1px 2px rgba(15, 29, 66, 0.06), 0 6px 20px rgba(15, 29, 66, 0.07);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
 }
 .page-no {
   justify-self: center;
@@ -530,17 +548,40 @@ const detailSummary = computed(() => {
   align-content: start;
 }
 .conclusion {
-  padding: 16px 18px;
-  border: 2px solid var(--navy-800);
-  border-radius: var(--radius);
+  padding: 20px 22px;
+  background: var(--blue-50);
+  border-radius: var(--radius-lg);
 }
-.cause {
+.conc-body {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.conc-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.cause {
   font-size: var(--fs-xl);
-  font-weight: 800;
+  font-weight: 700;
+  color: var(--ink);
+}
+.big-score {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: 2px;
+  margin: 0;
+}
+.big-score small {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.big-score .faint {
+  grid-column: 1 / -1;
+  font-size: var(--fs-xs);
 }
 .todo {
   display: flex;
@@ -706,12 +747,12 @@ const detailSummary = computed(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin: 0 -32px -20px;
-  padding: 14px 32px;
+  margin: 0 -36px -22px;
+  padding: 14px 36px;
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid var(--border);
-  border-radius: 0 0 var(--radius) var(--radius);
-  box-shadow: 0 -4px 14px rgba(15, 29, 66, 0.06);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.05);
 }
 .actions + .page-no {
   margin-top: 4px;

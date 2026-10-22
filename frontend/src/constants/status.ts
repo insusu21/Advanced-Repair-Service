@@ -12,7 +12,7 @@ import {
   Hand,
   Archive,
 } from 'lucide-vue-next'
-import type { AiAcceptance, AnalysisStage, AnalysisToolKind, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, OrderStatus, DecisionState, StatusGroupKey } from '@/types'
+import type { AiAcceptance, AnalysisStage, AnalysisToolKind, FaultArea, PhotoKind, RepairOutcome, RepairStatus, ReportStatus, Role, OrderStatus, DecisionState, StatusGroupKey, PhotoQualityIssue } from '@/types'
 
 /** 색상만으로 상태를 구분하지 않도록 label + icon + tone 을 함께 정의 */
 export type Tone = 'neutral' | 'info' | 'ai' | 'warning' | 'success' | 'danger'
@@ -108,6 +108,14 @@ export const DECISION_META: Record<DecisionState, { label: string; tone: Tone }>
 
 /** 접수 사진 제한 (백엔드와 동일): 칸별 5장, 전체 10장 */
 export const PHOTO_LIMIT = { perKind: 5, total: 10 }
+
+/** 사진 품질 검사 문제 → 안내 문구 */
+export const PHOTO_ISSUE_MESSAGE: Record<PhotoQualityIssue, string> = {
+  BLUR: '사진이 흐려요. 초점을 맞춰 다시 찍어 주세요.',
+  GLARE: '빛 반사가 있어요. 조명을 피해서 찍어 주세요.',
+  TOO_FAR: '너무 멀리서 찍었어요. 부품이 화면에 가득 차게 찍어 주세요.',
+  WRONG_PART: '요청한 부위가 아닌 것 같아요. 예시 사진을 참고해 주세요.',
+}
 
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   PCB: 'PCB',

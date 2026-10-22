@@ -1,8 +1,14 @@
 <script setup lang="ts">
-/* 사진 업로드: 드래그·선택·카메라 촬영 / 미리보기 / 삭제 / 재업로드 / 형식·용량 검증 */
-import { ref } from 'vue'
-import { Camera, ImagePlus, RefreshCw, Trash2, CircleAlert, CircleCheck } from 'lucide-vue-next'
+/* 사진 업로드: 드래그·선택·카메라 촬영 / 미리보기 / 삭제 / 재업로드 / 형식·용량 검증
+ * qualityTarget: 올린 사진마다 품질 검사 API 결과(검사 중 → 통과 / 문제 있음)를 표시.
+ *   FEATURES.photoQualityCheck 가 꺼져 있으면(실서버) 검사 없이 업로드만 한다. */
+import { computed, reactive, ref, watch } from 'vue'
+import { Camera, ImagePlus, RefreshCw, Trash2, CircleAlert, CircleCheck, Loader2, TriangleAlert } from 'lucide-vue-next'
 import type { UploadItem } from '@/types/upload'
+import type { PhotoQualityResult } from '@/types'
+import { checkPhotoQuality, type PhotoQualityTarget } from '@/api'
+import { FEATURES } from '@/api/features'
+import { PHOTO_ISSUE_MESSAGE } from '@/constants/status'
 import { compressImage, uid } from '@/utils/format'
 
 const props = withDefaults(
@@ -14,10 +20,16 @@ const props = withDefaults(
     max?: number
     invalid?: boolean
     exampleSrc?: string
+    /** 지정하면 이 부위 기준으로 품질 검사 */
+    qualityTarget?: PhotoQualityTarget
   }>(),
   { max: 1 },
 )
-const emit = defineEmits<{ 'update:modelValue': [UploadItem[]] }>()
+const emit = defineEmits<{
+  'update:modelValue': [UploadItem[]]
+  /** 검사 중 · 문제 있는 사진 수 (부모의 경고·확인용) */
+  quality: [summary: { checking: number; problems: number }]
+}>()
 
 const MAX_MB = 15
 const input = ref<HTMLInputElement | null>(null)
@@ -65,6 +77,37 @@ async function onFiles(files: FileList | null) {
   }
 }
 
+/* ---------- 품질 검사 (사진 id 별) ---------- */
+type QState = 'checking' | 'error' | PhotoQualityResult
+const quality = reactive<Record<string, QState>>({})
+const checking = computed(() => !!props.qualityTarget && FEATURES.photoQualityCheck)
+watch(
+  () => props.modelValue,
+  (items) => {
+    if (!checking.value || !props.qualityTarget) return
+    const target = props.qualityTarget
+    for (const it of items) {
+      if (quality[it.id]) continue
+      quality[it.id] = 'checking'
+      checkPhotoQuality(it.file, target)
+        .then((q) => (quality[it.id] = q))
+        // 검사 실패는 사진 문제로 보지 않는다 (그대로 진행 가능)
+        .catch(() => (quality[it.id] = 'error'))
+    }
+  },
+  { immediate: true },
+)
+const qOf = (id: string) => quality[id]
+const problemOf = (id: string) => {
+  const q = quality[id]
+  return typeof q === 'object' && !q.ok ? q : null
+}
+const summary = computed(() => ({
+  checking: props.modelValue.filter((it) => checking.value && (!quality[it.id] || quality[it.id] === 'checking')).length,
+  problems: props.modelValue.filter((it) => problemOf(it.id)).length,
+}))
+watch(summary, (v) => emit('quality', v), { immediate: true, deep: true })
+
 function pick(replace?: string) {
   replaceId.value = replace ?? null
   input.value?.click()
@@ -82,7 +125,7 @@ function onDrop(e: DragEvent) {
   <div class="uploader" :class="{ invalid: invalid && !modelValue.length }">
     <div class="head">
       <span class="label" :class="{ req: required }">{{ label }}</span>
-      <span v-if="modelValue.length >= max" class="badge tone-success"><CircleCheck :size="14" /> 등록됨</span>
+      <span v-if="modelValue.length" class="badge tone-success"><CircleCheck :size="14" /> 등록됨<template v-if="max > 1"> {{ modelValue.length }}장</template></span>
       <span v-else-if="required" class="badge tone-warning"><CircleAlert :size="14" /> 필수</span>
     </div>
     <p v-if="description" class="faint">{{ description }}</p>
@@ -94,8 +137,24 @@ function onDrop(e: DragEvent) {
         <img :src="it.dataUrl" :alt="`${label} 미리보기`" />
         <figcaption>
           <span class="nm" :title="it.name">{{ it.name }}</span>
+          <div v-if="checking" class="qc" aria-live="polite">
+            <span v-if="!qOf(it.id) || qOf(it.id) === 'checking'" class="badge tone-neutral"><Loader2 :size="14" class="spin" /> 사진 검사 중…</span>
+            <span v-else-if="qOf(it.id) === 'error'" class="faint">검사하지 못했어요 · 그대로 진행할 수 있어요</span>
+            <div v-else-if="problemOf(it.id)" class="problem">
+              <strong><TriangleAlert :size="16" /> 문제 있음</strong>
+              <ul>
+                <li v-for="q in problemOf(it.id)!.issues" :key="q">{{ PHOTO_ISSUE_MESSAGE[q] }}</li>
+              </ul>
+              <button type="button" class="btn btn-sm retake" @click="pick(it.id)"><Camera :size="16" /> 다시 찍기</button>
+              <figure v-if="exampleSrc" class="good">
+                <img :src="exampleSrc" alt="잘 찍은 예시 사진" />
+                <figcaption>이렇게 찍어 주세요</figcaption>
+              </figure>
+            </div>
+            <span v-else class="badge tone-success"><CircleCheck :size="14" /> 통과</span>
+          </div>
           <span class="acts">
-            <button type="button" class="btn btn-sm" @click="pick(it.id)"><RefreshCw :size="16" /> 다시 올리기</button>
+            <button v-if="!problemOf(it.id)" type="button" class="btn btn-sm" @click="pick(it.id)"><RefreshCw :size="16" /> 다시 올리기</button>
             <button type="button" class="btn btn-sm btn-danger" :aria-label="`${it.name} 삭제`" @click="remove(it.id)"><Trash2 :size="16" /> 삭제</button>
           </span>
         </figcaption>
@@ -182,6 +241,52 @@ function onDrop(e: DragEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.qc .badge {
+  font-size: var(--fs-xs);
+}
+.problem {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+}
+.problem strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.problem ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+}
+.retake {
+  justify-self: start;
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.good {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+.good img {
+  width: 72px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--success-border);
 }
 .acts {
   display: flex;

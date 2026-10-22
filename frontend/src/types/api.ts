@@ -1,5 +1,5 @@
 /* REST 요청/응답 DTO */
-import type { PhotoKind, ProductInfo, ReportContent, Role, Urgency, User } from './index'
+import type { PhotoKind, PrivacyConsent, ProductInfo, ReportContent, Role, Urgency, User, VisitInfo } from './index'
 
 /** Mock: username = 사번 / 실서버: username = 이메일 (form-urlencoded) */
 export interface LoginRequest {
@@ -32,6 +32,9 @@ export interface CreateRepairRequest {
   errorCodes: string[]
   /** 접수 화면에서 더 이상 보내지 않음 */
   urgency?: Urgency
+  /** 출장 방문 정보 · 동의 — userInput(AI 입력)과 분리된 별도 필드 */
+  visitInfo?: VisitInfo
+  consent?: PrivacyConsent
 }
 
 /** POST /api/repairs/{id}/images · additional-images (실서버는 multipart/form-data) */

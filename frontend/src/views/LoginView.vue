@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CircleAlert, LogIn, Wrench, Building2, Eye, EyeOff } from 'lucide-vue-next'
+import AppLogo from '@/components/common/AppLogo.vue'
 import { useAuthStore } from '@/stores/auth'
 import { toErrorMessage, USE_MOCK } from '@/api'
 import type { Role } from '@/types'
@@ -59,10 +60,9 @@ function fill(id: string) {
 <template>
   <div class="login">
     <section class="intro">
-      <div class="brand">
-        <svg width="44" height="44" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#fff" /><circle cx="16" cy="16" r="9" fill="none" stroke="#16285a" stroke-width="2.6" /><circle cx="16" cy="12" r="2.3" fill="#16285a" /></svg>
-        <strong>RobotCare AI</strong>
-      </div>
+      <span class="glow g1" aria-hidden="true" />
+      <span class="glow g2" aria-hidden="true" />
+      <div class="brand"><AppLogo /></div>
       <h1>로봇청소기 고장 진단<br />업무 지원 시스템</h1>
       <ol class="flow">
         <li><span>1</span>접수 · 사진 등록</li>
@@ -133,25 +133,50 @@ function fill(id: string) {
   grid-template-columns: 1.1fr 1fr;
 }
 .intro {
-  background: var(--navy-900);
-  color: #dbe3f4;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: #fff;
+  color: var(--text-2);
   padding: 56px 64px;
   display: flex;
   flex-direction: column;
   gap: 32px;
   justify-content: center;
 }
+/* 그라데이션 빛 (블러 처리된 원) */
+.glow {
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--gradient);
+  filter: blur(80px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.g1 {
+  width: 520px;
+  height: 520px;
+  top: -160px;
+  right: -140px;
+}
+.g2 {
+  width: 380px;
+  height: 380px;
+  bottom: -140px;
+  left: -100px;
+  opacity: 0.35;
+}
 .brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  color: #fff;
-  font-size: var(--fs-xl);
 }
 h1 {
-  color: #fff;
-  font-size: 2.4rem;
-  line-height: 1.25;
+  color: var(--ink);
+  font-size: 3.4rem;
+  font-weight: 200;
+  line-height: 1.18;
+  letter-spacing: -0.04em;
 }
 .flow {
   list-style: none;
@@ -170,35 +195,44 @@ h1 {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 2px solid #6f84b8;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--blue-100);
+  color: var(--primary);
   display: grid;
   place-items: center;
-  font-weight: 800;
+  font-weight: 700;
   font-size: var(--fs-sm);
+}
+.flow li {
+  color: var(--ink);
 }
 .rule {
   max-width: 460px;
   padding: 16px 18px;
-  border: 1px dashed #6f84b8;
-  border-radius: var(--radius);
-  color: #c9d3ea;
+  border: 1px dashed var(--ai-border);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-2);
 }
 .rule b {
-  color: #fff;
+  color: var(--ai);
 }
 .panel {
   display: grid;
   place-items: center;
   padding: 32px;
+  background: var(--bg);
 }
 .form {
   width: min(480px, 100%);
-  padding: 32px;
+  padding: 36px;
   display: grid;
   gap: 18px;
 }
 h2 {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-2xl);
+  font-weight: 300;
+  letter-spacing: -0.03em;
 }
 .pw {
   position: relative;
@@ -229,15 +263,15 @@ h2 {
   min-height: 60px;
   padding: 10px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   cursor: pointer;
   text-align: left;
-  color: var(--navy-800);
+  color: var(--primary);
 }
 .role:hover {
-  border-color: var(--navy-700);
-  background: var(--navy-50);
+  border-color: var(--primary);
+  background: var(--blue-50);
 }
 .role span {
   display: grid;
@@ -256,7 +290,7 @@ h2 {
     gap: 20px;
   }
   h1 {
-    font-size: var(--fs-2xl);
+    font-size: 2.4rem;
   }
   .flow {
     display: none;

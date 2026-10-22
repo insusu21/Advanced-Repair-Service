@@ -1,5 +1,6 @@
 /* 접수 · 진단 · 추가 사진 · 리포트 API
  * Mock: src/mocks/handlers.ts / 실서버: 백엔드 API v2 (응답은 src/api/adapters 에서 프론트 타입으로 변환) */
+import { FEATURES } from './features'
 import { ApiError, http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
 import { partApi } from './parts'
@@ -141,8 +142,11 @@ export const repairApi = {
       symptoms: req.symptom,
       errorCodes: req.errorCodes,
       firmware: req.product.firmware,
-      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·기사 소견 복원에 사용
+      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·기사 소견 복원에 사용 (AI 에이전트 입력)
+      // ※ 방문 정보·동의(개인정보)는 여기에 넣지 않는다
       userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind) },
+      // 출장 방문 정보 · 개인정보 동의: userInput 과 분리된 별도 필드. 백엔드 지원 전까지 FEATURES.visitInfo 로 꺼 둔다
+      ...(FEATURES.visitInfo && req.visitInfo && req.consent ? { visitInfo: req.visitInfo, consent: req.consent } : {}),
     }
     const f = new FormData()
     f.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))

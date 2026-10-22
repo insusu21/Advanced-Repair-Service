@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { BarChart3, ClipboardCheck, House, List, Package, PlusCircle } from 'lucide-vue-next'
+import AppLogo from '@/components/common/AppLogo.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRepairListStore } from '@/stores/repairs'
 import { useOrderStore } from '@/stores/orders'
@@ -34,11 +35,8 @@ const items = computed(() => {
 <template>
   <aside class="sidebar" aria-label="주 메뉴">
     <RouterLink to="/" class="brand" @click="$emit('navigate')">
-      <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#fff" /><circle cx="16" cy="16" r="9" fill="none" stroke="#16285a" stroke-width="2.6" /><circle cx="16" cy="12" r="2.3" fill="#16285a" /></svg>
-      <span>
-        <strong>RobotCare AI</strong>
-        <small>고장 진단 지원 시스템</small>
-      </span>
+      <AppLogo />
+      <small>고장 진단 지원 시스템</small>
     </RouterLink>
     <nav>
       <RouterLink
@@ -63,30 +61,25 @@ const items = computed(() => {
 
 <style scoped>
 .sidebar {
-  background: var(--navy-900);
-  color: #dbe3f4;
+  background: var(--surface);
+  color: var(--text-2);
   display: flex;
   flex-direction: column;
-  padding: 18px 14px;
+  padding: 20px 14px;
   gap: 18px;
   overflow-y: auto;
+  border-right: 1px solid var(--border);
 }
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: #fff;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
   text-decoration: none;
-  padding: 4px 8px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.brand strong {
-  display: block;
-  font-size: var(--fs-lg);
-  letter-spacing: -0.01em;
+  padding: 4px 10px 16px;
+  border-bottom: 1px solid var(--border);
 }
 .brand small {
-  color: #9fb0d4;
+  color: var(--text-3);
   font-size: var(--fs-xs);
 }
 nav {
@@ -98,20 +91,20 @@ nav {
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 0 14px;
-  border-radius: var(--radius);
-  color: #c9d3ea;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
   text-decoration: none;
   font-weight: 600;
   font-size: var(--fs-md);
 }
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 .nav-item.active {
-  background: #fff;
-  color: var(--navy-900);
+  background: var(--blue-50);
+  color: var(--primary);
 }
 .count {
   margin-left: auto;
@@ -129,9 +122,9 @@ nav {
 .foot {
   margin-top: auto;
   font-size: var(--fs-xs);
-  color: #9fb0d4;
-  padding: 12px 8px 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-3);
+  padding: 12px 10px 4px;
+  border-top: 1px solid var(--border);
   line-height: 1.6;
 }
 </style>

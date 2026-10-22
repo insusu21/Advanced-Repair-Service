@@ -91,11 +91,151 @@ export interface Repair {
   report?: RepairReport
   /** 목록 응답용 요약: 최신 AI 진단 원인 */
   aiTopCause?: string
+  /** 출장 방문 정보 · 개인정보 동의 (Mock 전용 저장, 실서버는 FEATURES.visitInfo 로 켬) */
+  visitInfo?: VisitInfo
+  consent?: PrivacyConsent
   /** 데모 시나리오 제어용 (Mock 전용) */
   mockScenario?: 'NORMAL' | 'NEED_PHOTO' | 'FAIL'
 }
 
 export type Urgency = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/* ---------------- 출장 방문 정보 · 개인정보 동의 ----------------
+ * 고객 개인정보. AI 로 가는 userInput 에는 절대 넣지 않는다. (현재 Mock 에만 저장) */
+export interface VisitInfo {
+  customerName: string
+  phone: string
+  address: string
+  /** 희망 방문일 (YYYY-MM-DD) */
+  preferredDate: string
+  /** 구매일 (YYYY-MM-DD) — 무상 수리 여부 확인용. 고객이 모르면 null */
+  purchaseDate: string | null
+  /** 기사가 확정한 방문일 (YYYY-MM-DD). 확정 전이면 없음 */
+  confirmedDate?: string
+}
+
+/* ---------------- 소비자용 수리 진행 조회 ----------------
+ * 고객에게는 기사가 확정한 내용만 쉬운 말로 보여 준다.
+ * AI 초안·판단 점수·부품번호·재고 정보는 이 응답에 담지 않는다 (서버에서 걸러서 내려줌) */
+export type CustomerStage = 'RECEIVED' | 'PHOTO_CHECK' | 'DIAGNOSED' | 'VISIT_SCHEDULED' | 'COMPLETED'
+
+export interface CustomerReport {
+  receiptNo: string
+  productName: string
+  receivedAt: string
+  stage: CustomerStage
+  /** 지금 단계에 대한 안내 한 줄 (예: 추가 사진 요청, 접수 취소) */
+  notice?: string
+  /** 기사가 확정한 진단·수리 결과를 쉬운 말로 1~2문장. 확정 전이면 없음 */
+  summary?: string
+  /** 기사가 확정한 무상/유상. 확정 전이면 null */
+  warranty: 'FREE' | 'PAID' | null
+  visit: { preferredDate?: string; confirmedDate?: string }
+  cancelled?: boolean
+}
+
+/* ---------------- 출장 준비 · 재고 예약 ----------------
+ * 출장 전에 필요한 부품을 창고 재고에서 예약(가용 → 예약)하고, 가져갈 때 출고 처리한다.
+ * 예약은 24시간 뒤 만료되어 가용 재고로 돌아간다 */
+export type ReservationStatus = 'RESERVED' | 'RELEASED' | 'CANCELLED' | 'EXPIRED'
+
+export interface StockReservation {
+  id: string
+  partId: string
+  repairId: number
+  warehouse: string
+  quantity: number
+  status: ReservationStatus
+  reservedBy: string
+  reservedAt: string
+  expiresAt: string
+  closedAt?: string
+}
+
+export interface TripStock {
+  warehouse: string
+  location: string
+  /** 지금 예약·출고할 수 있는 수량 */
+  available: number
+  /** 다른 수리 건 포함 예약 중인 수량 */
+  reserved: number
+}
+
+/** 고객 사진으로 예측한 출장 필요 부품 */
+export interface TripPart {
+  partId: string
+  partName: string
+  partNo: string
+  quantity: number
+  /** 예측 근거 한 줄 */
+  reason: string
+  stocks: TripStock[]
+  /** 이 수리 건의 가장 최근 예약 (없으면 미예약) */
+  reservation?: StockReservation
+}
+
+export type StockChange = 'RESERVE' | 'CANCEL' | 'EXPIRE' | 'RELEASE'
+
+export interface StockHistoryEntry {
+  id: string
+  partId: string
+  at: string
+  change: StockChange
+  /** 가용 재고 변화 (예약 -n · 취소/만료 +n · 출고 0) */
+  delta: number
+  quantity: number
+  warehouse: string
+  actor: string
+  repairId: number
+}
+
+/* ---------------- 보증 기간 안내 (접수 화면) ----------------
+ * 보증 상태와 만료일만 담는다. 제품 소유자·수리 이력 등 다른 정보는 절대 넣지 않는다 */
+export interface WarrantyPeriod {
+  status: 'IN_WARRANTY' | 'EXPIRED' | 'UNKNOWN'
+  /** 보증 만료일 (YYYY-MM-DD). 화면에는 연·월만 표시 */
+  until?: string
+  /** 고객이 입력한 구매일 기준 / 제조일로 추정 */
+  basis: 'CUSTOMER_INPUT' | 'MANUFACTURE_DATE_ESTIMATE'
+}
+
+/* ---------------- 보증 판정 (무상/유상) ----------------
+ * AI 가 구매일 + 진단 원인 + 보증 규칙으로 제안(suggestion)하고, 기사가 확정(decision)한다 */
+export type WarrantySuggestion = 'FREE' | 'PAID' | 'UNKNOWN'
+export type WarrantyFaultType = 'PRODUCT_DEFECT' | 'USER_FAULT' | 'UNKNOWN'
+
+export interface WarrantyDecision {
+  result: 'FREE' | 'PAID'
+  reason?: string
+  decidedBy: string
+  decidedAt: string
+}
+
+export interface Warranty {
+  suggestion: WarrantySuggestion
+  /** 구매일 (YYYY-MM-DD). 모르면 없음 */
+  purchaseDate?: string
+  warrantyMonths: number
+  faultType: WarrantyFaultType
+  /** 화면에 그대로 보여 줄 근거 (구매일 · 고장 원인 · 판단 근거) */
+  reasons: string[]
+  decision?: WarrantyDecision
+}
+
+/* ---------------- 접수 사진 품질 검사 ---------------- */
+export type PhotoQualityIssue = 'BLUR' | 'GLARE' | 'TOO_FAR' | 'WRONG_PART'
+
+export interface PhotoQualityResult {
+  ok: boolean
+  issues: PhotoQualityIssue[]
+  score?: number
+}
+
+export interface PrivacyConsent {
+  agreed: true
+  agreedAt: string
+  version: 'v1'
+}
 
 /* ---------------- 진단 진행 (SSE) ---------------- */
 

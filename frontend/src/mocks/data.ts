@@ -81,8 +81,9 @@ export const PARTS: Part[] = [
     partNo: 'RM-MT-103',
     compatibleModels: ['RC-A100', 'RC-X700'],
     stocks: [
-      { warehouse: '수원 창고', location: 'B동 3열 2단', quantity: 7 },
-      { warehouse: '대전 창고', location: 'A동 1열 4단', quantity: 2 },
+      // 데모: 1개만 남아 있어 예약 시 409 STOCK_CONFLICT(다른 기사가 먼저 예약)를 시연
+      { warehouse: '수원 창고', location: 'B동 3열 2단', quantity: 1 },
+      { warehouse: '대전 창고', location: 'A동 1열 4단', quantity: 0 },
     ],
     factory: '구미 제2공장',
     factoryContact: { manager: '정우성 과장', phone: '054-470-2103', email: 'motor.gumi2@robotcare.co.kr' },
@@ -499,6 +500,11 @@ export interface MockDbState {
   orders: PurchaseOrder[]
   parts: Part[]
   notifications: Notification[]
+  /** 보증 판정: 고장 원인 유형(시드에서 지정할 때만) · 기사 확정 결과 */
+  warranty: Record<number, { fault?: { type: import('@/types').WarrantyFaultType; label: string }; decision?: import('@/types').WarrantyDecision }>
+  /** 재고 예약 (출장 준비) · 재고 변경 이력 */
+  reservations: import('@/types').StockReservation[]
+  stockHistory: import('@/types').StockHistoryEntry[]
   seq: number
 }
 
@@ -606,7 +612,36 @@ export function createSeed(): MockDbState {
     { id: 'N5', title: '발주 요청 1건', body: '휠 회전 센서(RM-SN-221) 발주 승인이 필요합니다.', at: isoAgo(60 * 20), read: false, link: '/order-approvals', roles: ['QUALITY_MANAGER'] },
   ]
 
-  return { repairs, diagnoses, photoRequests, orders, parts: structuredClone(PARTS), notifications, seq: 200 }
+  /* 보증 판정 데모: #101 무상(FREE) · #113 유상(PAID, 침수 흔적) · #114 판단 어려움(UNKNOWN, 구매일 모름) */
+  /* 진행 조회 데모: 휴대폰 뒷자리는 수리 ID 와 같게 (예: #101 → 0101) */
+  const visit = (name: string, purchaseDate: string | null, last4: string, confirmedDate?: string) => ({ customerName: name, phone: `010-0000-${last4}`, address: '데모시 예시구 샘플로 1', preferredDate: '2026-10-28', purchaseDate, confirmedDate })
+  const setVisit = (id: number, v: ReturnType<typeof visit>) => {
+    const r = repairs.find((x) => x.id === id)
+    if (r) r.visitInfo = v
+  }
+  setVisit(101, visit('데모 고객A', '2025-12-01', '0101'))
+  setVisit(113, visit('데모 고객B', '2026-03-15', '0113'))
+  setVisit(114, visit('데모 고객C', null, '0114'))
+  setVisit(104, visit('데모 고객D', '2026-02-10', '0104', '2026-10-24'))
+  setVisit(105, visit('데모 고객E', '2026-01-20', '0105', '2026-10-20'))
+  const warranty: MockDbState['warranty'] = {
+    113: { fault: { type: 'USER_FAULT', label: '사용자 과실 의심 (물걸레 모듈 주변 침수 흔적)' } },
+    104: { decision: { result: 'FREE', reason: '영수증으로 구매일 확인', decidedBy: '김정훈', decidedAt: isoAgo(60 * 20) } },
+    105: { decision: { result: 'FREE', decidedBy: '김정훈', decidedAt: isoAgo(60 * 48) } },
+  }
+
+  /* 재고 예약 데모: #104 의 휠 센서 예약은 이미 24시간이 지나 처음 조회할 때 만료 처리된다 */
+  const reservations: MockDbState['reservations'] = [
+    { id: 'RSV-SEED-1', partId: 'P-221', repairId: 104, warehouse: '수원 창고', quantity: 1, status: 'RESERVED', reservedBy: '김정훈', reservedAt: isoAgo(60 * 26), expiresAt: isoAgo(60 * 2) },
+    { id: 'RSV-SEED-2', partId: 'P-103', repairId: 106, warehouse: '수원 창고', quantity: 1, status: 'RELEASED', reservedBy: '박민수', reservedAt: isoAgo(60 * 32), expiresAt: isoAgo(60 * 8), closedAt: isoAgo(60 * 30) },
+  ]
+  const stockHistory: MockDbState['stockHistory'] = [
+    { id: 'SH-SEED-1', partId: 'P-103', at: isoAgo(60 * 32), change: 'RESERVE', delta: -1, quantity: 1, warehouse: '수원 창고', actor: '박민수', repairId: 106 },
+    { id: 'SH-SEED-2', partId: 'P-103', at: isoAgo(60 * 30), change: 'RELEASE', delta: 0, quantity: 1, warehouse: '수원 창고', actor: '박민수', repairId: 106 },
+    { id: 'SH-SEED-3', partId: 'P-221', at: isoAgo(60 * 26), change: 'RESERVE', delta: -1, quantity: 1, warehouse: '수원 창고', actor: '김정훈', repairId: 104 },
+  ]
+
+  return { repairs, diagnoses, photoRequests, orders, parts: structuredClone(PARTS), notifications, warranty, reservations, stockHistory, seq: 200 }
 }
 
 /* ---------------- 대시보드용: 승인된 고장 레코드 (사내 고장 DB) ---------------- */

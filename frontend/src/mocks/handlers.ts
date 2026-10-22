@@ -5,6 +5,7 @@
  * ========================================================================= */
 import type {
   ApprovalRecord,
+  CustomerReport,
   DefectDashboard,
   Diagnosis,
   Page,
@@ -18,7 +19,12 @@ import type {
   RepairStatusCounts,
   RepairSummaryCounts,
   Role,
+  StockHistoryEntry,
+  StockReservation,
+  TripPart,
   User,
+  Warranty,
+  WarrantyPeriod,
 } from '@/types'
 import type {
   AdditionalInfoRequest,
@@ -150,6 +156,8 @@ export function createRepair(req: CreateRepairRequest): Repair {
     symptom: req.symptom,
     technicianNote: req.technicianNote?.trim() || undefined,
     errorCodes: [...req.errorCodes],
+    visitInfo: req.visitInfo ? { ...req.visitInfo } : undefined,
+    consent: req.consent ? { ...req.consent } : undefined,
     branch: u.branch,
     technician: u.name,
     technicianId: u.employeeId,
@@ -539,4 +547,316 @@ export function readAllNotifications() {
   const u = me()
   db.notifications.filter((n) => n.roles.includes(u.role)).forEach((n) => (n.read = true))
   persist()
+}
+
+/* ---------------- 보증 판정 ---------------- */
+const WARRANTY_MONTHS = 12
+
+/** 구매일부터 지금까지 지난 개월 수 (일 단위 내림) */
+function monthsSince(date: string, now = new Date()): number {
+  const d = new Date(`${date}T00:00:00`)
+  let m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+  if (now.getDate() < d.getDate()) m--
+  return Math.max(0, m)
+}
+
+export function getWarranty(id: number): Warranty {
+  const r = repairOr404(id)
+  db.warranty ??= {}
+  const saved = db.warranty[id] ?? {}
+  const d = latestDiagnosis(id)
+  // 고장 원인: 시드 지정값 > AI 진단 원인(제품 결함으로 간주) > 진단 전
+  const fault = saved.fault ?? (d ? { type: 'PRODUCT_DEFECT' as const, label: `제품 결함 (${d.topCause})` } : { type: 'UNKNOWN' as const, label: '원인 미확정 (AI 진단 전)' })
+  const purchaseDate = r.visitInfo?.purchaseDate ?? undefined
+  const elapsed = purchaseDate ? monthsSince(purchaseDate) : null
+  const expired = elapsed !== null && elapsed >= WARRANTY_MONTHS
+
+  let suggestion: Warranty['suggestion']
+  if (!purchaseDate) suggestion = 'UNKNOWN'
+  else if (expired || fault.type === 'USER_FAULT') suggestion = 'PAID'
+  else if (fault.type === 'PRODUCT_DEFECT') suggestion = 'FREE'
+  else suggestion = 'UNKNOWN'
+
+  const purchaseLine = !purchaseDate
+    ? '구매일: 모름 (고객 확인 필요)'
+    : expired
+      ? `구매일: ${purchaseDate} (보증 기간 1년 · ${elapsed}개월 경과로 만료)`
+      : `구매일: ${purchaseDate} (보증 기간 1년 중 ${elapsed}개월 경과)`
+  return {
+    suggestion,
+    purchaseDate,
+    warrantyMonths: WARRANTY_MONTHS,
+    faultType: fault.type,
+    reasons: [purchaseLine, `고장 원인: ${fault.label}`, '판단 근거: AI 진단 원인 + 보증 규칙 (구매 후 12개월 이내 제품 결함은 무상, 사용자 과실·기간 만료는 유상)'],
+    decision: saved.decision,
+  }
+}
+
+export function decideWarranty(id: number, result: 'FREE' | 'PAID', reason?: string): Warranty {
+  const u = requireRole('TECHNICIAN')
+  const r = repairOr404(id)
+  const w = getWarranty(id)
+  if (w.decision) throw new ApiError(409, '이미 보증 판정을 확정했습니다.')
+  const comment = reason?.trim() || undefined
+  if (result !== w.suggestion && !comment) throw new ApiError(422, 'AI 제안과 다르게 확정할 때는 사유를 입력해 주세요.')
+  db.warranty[id] = { ...db.warranty[id], decision: { result, reason: comment, decidedBy: u.name, decidedAt: new Date().toISOString() } }
+  log(r, { target: 'SYSTEM', action: 'CONFIRMED', actor: u.name, actorRole: u.role, comment: `보증 판정 ${result === 'FREE' ? '무상' : '유상'} 확정${comment ? ` · ${comment}` : ''}` })
+  persist()
+  return getWarranty(id)
+}
+
+/* ---------------- 출장 준비 · 재고 예약 ----------------
+ * 창고 stock.quantity = 가용 수량. 예약하면 가용에서 빼고, 예약 수량은 예약 목록(RESERVED)의 합으로 계산한다 */
+const RESERVATION_HOURS = 24
+const PHOTO_WORD: Record<string, string> = { PCB: 'PCB 사진', MOTOR: '기계 사진' }
+
+function stockLog(e: Omit<StockHistoryEntry, 'id' | 'at'>, at = new Date().toISOString()) {
+  db.stockHistory.unshift({ id: uid('SH'), at, ...e })
+}
+function stockOf(partId: string, warehouse: string) {
+  const s = db.parts.find((p) => p.id === partId)?.stocks.find((x) => x.warehouse === warehouse)
+  if (!s) throw new ApiError(404, '재고 정보를 찾을 수 없습니다.')
+  return s
+}
+/** 24시간 지난 예약을 만료 처리 (조회할 때마다 확인) */
+function expireReservations() {
+  db.reservations ??= []
+  db.stockHistory ??= []
+  const now = Date.now()
+  let changed = false
+  for (const r of db.reservations) {
+    if (r.status !== 'RESERVED' || new Date(r.expiresAt).getTime() > now) continue
+    r.status = 'EXPIRED'
+    r.closedAt = r.expiresAt
+    stockOf(r.partId, r.warehouse).quantity += r.quantity
+    stockLog({ partId: r.partId, change: 'EXPIRE', delta: r.quantity, quantity: r.quantity, warehouse: r.warehouse, actor: '시스템 (24시간 만료)', repairId: r.repairId }, r.expiresAt)
+    changed = true
+  }
+  if (changed) persist()
+}
+const reservedAt = (partId: string, warehouse: string) =>
+  db.reservations.filter((r) => r.partId === partId && r.warehouse === warehouse && r.status === 'RESERVED').reduce((a, r) => a + r.quantity, 0)
+
+export function getTripParts(repairId: number): TripPart[] {
+  repairOr404(repairId)
+  expireReservations()
+  const d = latestDiagnosis(repairId)
+  if (!d) return []
+  // 예측 근거: 이상·의심 판정이 나온 부위의 사진 분석 요약
+  const finding = d.agents.find((a) => a.verdict === 'ABNORMAL') ?? d.agents.find((a) => a.verdict === 'SUSPICIOUS')
+  return d.parts.map((rec) => {
+    const part = db.parts.find((p) => p.id === rec.partId)
+    const mine = db.reservations.filter((r) => r.partId === rec.partId && r.repairId === repairId)
+    return {
+      partId: rec.partId,
+      partName: rec.partName,
+      partNo: rec.partNo,
+      quantity: rec.quantity,
+      reason: finding ? `${PHOTO_WORD[finding.agent]}: ${finding.summary} → ${rec.reason}` : rec.reason,
+      stocks: (part?.stocks ?? []).map((s) => ({ warehouse: s.warehouse, location: s.location, available: s.quantity, reserved: reservedAt(rec.partId, s.warehouse) })),
+      reservation: mine.sort((a, b) => b.reservedAt.localeCompare(a.reservedAt))[0],
+    }
+  })
+}
+
+export function reserveStock(partId: string, quantity: number, repairId: number): StockReservation {
+  const u = requireRole('TECHNICIAN')
+  repairOr404(repairId)
+  expireReservations()
+  if (quantity < 1) throw new ApiError(422, '예약 수량은 1개 이상이어야 합니다.')
+  if (db.reservations.some((r) => r.partId === partId && r.repairId === repairId && r.status === 'RESERVED')) throw new ApiError(409, '이미 예약한 부품입니다.')
+  const part = db.parts.find((p) => p.id === partId)
+  if (!part) throw new ApiError(404, '부품을 찾을 수 없습니다.')
+  const stock = [...part.stocks].filter((s) => s.quantity >= quantity).sort((a, b) => b.quantity - a.quantity)[0]
+  if (!stock) throw new ApiError(409, '가용 재고가 부족합니다. 주문 요청을 이용해 주세요.', 'INSUFFICIENT_STOCK')
+
+  // 동시 예약 시연: 1개만 남았거나 10% 확률로 다른 기사가 먼저 예약한 것으로 처리
+  if (stock.quantity === 1 || Math.random() < 0.1) {
+    const other = USERS.find((x) => x.role === 'TECHNICIAN' && x.name !== u.name)?.name ?? '다른 기사'
+    const take = Math.min(stock.quantity, quantity)
+    const otherRepair = db.repairs.find((r) => r.id !== repairId)?.id ?? repairId
+    const now = new Date()
+    db.reservations.push({ id: uid('RSV'), partId, repairId: otherRepair, warehouse: stock.warehouse, quantity: take, status: 'RESERVED', reservedBy: other, reservedAt: now.toISOString(), expiresAt: new Date(now.getTime() + RESERVATION_HOURS * 3_600_000).toISOString() })
+    stock.quantity -= take
+    stockLog({ partId, change: 'RESERVE', delta: -take, quantity: take, warehouse: stock.warehouse, actor: other, repairId: otherRepair })
+    persist()
+    throw new ApiError(409, '다른 기사가 먼저 예약해서 재고가 바뀌었어요.', 'STOCK_CONFLICT')
+  }
+
+  const now = new Date()
+  const r: StockReservation = {
+    id: uid('RSV'),
+    partId,
+    repairId,
+    warehouse: stock.warehouse,
+    quantity,
+    status: 'RESERVED',
+    reservedBy: u.name,
+    reservedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + RESERVATION_HOURS * 3_600_000).toISOString(),
+  }
+  stock.quantity -= quantity
+  db.reservations.push(r)
+  stockLog({ partId, change: 'RESERVE', delta: -quantity, quantity, warehouse: stock.warehouse, actor: u.name, repairId })
+  persist()
+  return r
+}
+
+function activeReservation(id: string): StockReservation {
+  expireReservations()
+  const r = db.reservations.find((x) => x.id === id)
+  if (!r) throw new ApiError(404, '예약을 찾을 수 없습니다.')
+  if (r.status !== 'RESERVED') throw new ApiError(409, r.status === 'EXPIRED' ? '예약이 만료되었습니다. 다시 예약해 주세요.' : '이미 처리된 예약입니다.')
+  return r
+}
+
+export function cancelReservation(id: string): StockReservation {
+  const u = requireRole('TECHNICIAN')
+  const r = activeReservation(id)
+  r.status = 'CANCELLED'
+  r.closedAt = new Date().toISOString()
+  stockOf(r.partId, r.warehouse).quantity += r.quantity
+  stockLog({ partId: r.partId, change: 'CANCEL', delta: r.quantity, quantity: r.quantity, warehouse: r.warehouse, actor: u.name, repairId: r.repairId })
+  persist()
+  return r
+}
+
+/** 출고: 예약분을 실제로 가져감 (가용은 예약 때 이미 빠졌으므로 변화 없음, 예약에서 차감) */
+export function releaseStock(id: string): StockReservation {
+  const u = requireRole('TECHNICIAN')
+  const r = activeReservation(id)
+  r.status = 'RELEASED'
+  r.closedAt = new Date().toISOString()
+  stockLog({ partId: r.partId, change: 'RELEASE', delta: 0, quantity: r.quantity, warehouse: r.warehouse, actor: u.name, repairId: r.repairId })
+  persist()
+  return r
+}
+
+export function getStockHistory(partId: string): StockHistoryEntry[] {
+  expireReservations()
+  return db.stockHistory.filter((h) => h.partId === partId).sort((a, b) => b.at.localeCompare(a.at))
+}
+
+/* ---------------- 소비자용 수리 진행 조회 (로그인 없음) ----------------
+ * 기사가 확정한 내용만 쉬운 말로. AI 초안·판단 점수·부품번호·재고는 담지 않는다 */
+const CUSTOMER_NOT_FOUND = '접수 정보를 찾을 수 없어요. 접수번호를 다시 확인해 주세요.'
+const AREA_WORD: Record<string, string> = { PCB: '내부 전원 회로 기판', MOTOR: '바퀴를 움직이는 모터 부분', SW: '제품 소프트웨어', OTHER: '일부 부품' }
+
+/** 진단 원인 → 쉬운 말 (전문 용어·부품번호 없이) */
+function plainArea(cause: string): string {
+  if (/모터|하우징/.test(cause)) return AREA_WORD.MOTOR
+  if (/센서|휠|바퀴/.test(cause)) return '바퀴 회전을 감지하는 센서'
+  if (/PCB|전원|기판/.test(cause)) return AREA_WORD.PCB
+  return '고장 부위'
+}
+
+export function getCustomerReport(receiptNo: string, phoneLast4: string): CustomerReport {
+  const no = receiptNo.trim().toUpperCase()
+  const last4 = phoneLast4.replace(/\D/g, '')
+  const r = db.repairs.find((x) => x.receiptNo.toUpperCase() === no)
+  const phone = r?.visitInfo?.phone.replace(/\D/g, '') ?? ''
+  // 접수번호 없음 · 연락처 없음 · 뒷자리 불일치 모두 같은 응답
+  if (!r || last4.length !== 4 || !phone || !phone.endsWith(last4)) throw new ApiError(404, CUSTOMER_NOT_FOUND, 'NOT_FOUND')
+
+  const d = latestDiagnosis(r.id)
+  const diagConfirmed = d?.technicianDecision.state === 'APPROVED'
+  const visit = { preferredDate: r.visitInfo?.preferredDate, confirmedDate: r.visitInfo?.confirmedDate }
+  let stage: CustomerReport['stage'] = 'RECEIVED'
+  let notice: string | undefined
+  let summary: string | undefined
+
+  switch (r.status) {
+    case 'DRAFT':
+    case 'RECEIVED':
+      break
+    case 'QUEUED':
+    case 'ANALYZING':
+    case 'DIAGNOSIS_COMPLETED':
+      // AI 초안이 있어도 기사 확인 전에는 '사진 확인 중'으로만 안내
+      stage = 'PHOTO_CHECK'
+      break
+    case 'ADDITIONAL_INFO_NEEDED':
+      stage = 'PHOTO_CHECK'
+      notice = '사진을 한 번 더 확인해야 해서 기사님이 연락드릴 예정이에요.'
+      break
+    case 'MANUAL_REVIEW':
+      stage = 'PHOTO_CHECK'
+      notice = '전문 담당자가 사진을 한 번 더 확인하고 있어요.'
+      break
+    case 'REJECTED':
+      stage = 'PHOTO_CHECK'
+      notice = '기사님이 고장 부위를 직접 확인하고 있어요.'
+      break
+    case 'TECHNICIAN_REVIEW':
+      stage = visit.confirmedDate ? 'VISIT_SCHEDULED' : 'DIAGNOSED'
+      break
+    case 'APPROVED':
+    case 'CLOSED':
+      stage = 'COMPLETED'
+      break
+    case 'CANCELLED':
+      notice = '접수가 취소되었어요. 궁금한 점은 고객센터로 문의해 주세요.'
+      break
+  }
+
+  if (stage === 'COMPLETED' && r.report) {
+    const c = r.report.content
+    const area = AREA_WORD[c.faults[0]?.area ?? 'OTHER']
+    summary =
+      c.outcome === 'FIXED'
+        ? `${area}에 문제가 있어 수리를 마쳤어요.`
+        : c.outcome === 'NOT_FIXED'
+          ? '수리 후에도 증상이 남아 있어 기사님이 추가로 확인할 예정이에요.'
+          : '점검 결과 고장 난 곳을 찾지 못했어요. 같은 증상이 다시 생기면 알려 주세요.'
+  } else if ((stage === 'DIAGNOSED' || stage === 'VISIT_SCHEDULED') && d && diagConfirmed) {
+    summary = `기사님이 확인한 결과 ${plainArea(d.topCause)}에 문제가 있어요. ${d.parts.length ? '방문해서 해당 부품을 교체해 드릴 예정이에요.' : '방문해서 점검·수리해 드릴 예정이에요.'}`
+  }
+
+  return {
+    receiptNo: r.receiptNo,
+    productName: r.product.modelName,
+    receivedAt: r.receivedAt,
+    stage,
+    notice,
+    summary,
+    // 기사가 확정한 결과만 (AI 제안은 보내지 않음)
+    warranty: db.warranty?.[r.id]?.decision?.result ?? null,
+    visit,
+    cancelled: r.status === 'CANCELLED' || undefined,
+  }
+}
+
+/* ---------------- 보증 기간 안내 (접수 화면) ----------------
+ * 구매일이 있으면 구매일 + 12개월, 없으면 제조월 + 3개월(유통 기간 추정) + 12개월.
+ * 결과에는 보증 상태·만료일·근거만 담는다 */
+/** 시리얼별 제조월 시드 (데모). 없으면 제품 시드의 제조일 사용, null 이면 제조 정보 없음 → UNKNOWN */
+const MANUFACTURE_MONTH: Record<string, string | null> = {
+  RC2026000187: '2026-02', // 보증 기간 안 (추정)
+  RC2024001234: '2024-03', // 보증 기간 지남
+  RC2026000999: null, // 제조 정보 없음 → 안내 숨김
+}
+const SHIP_MONTHS = 3
+const WARRANTY_PERIOD_MONTHS = 12
+
+function addMonths(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const t = new Date(y, m - 1 + n, 1)
+  // 말일 보정 (예: 1월 31일 + 1개월 → 2월 말일)
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()
+  t.setDate(Math.min(d, last))
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+}
+
+export function checkWarrantyPeriod(serial: string, purchaseDate?: string): WarrantyPeriod {
+  const s = serial.trim().toUpperCase()
+  const today = new Date().toISOString().slice(0, 10)
+  const statusOf = (until: string): WarrantyPeriod['status'] => (until >= today ? 'IN_WARRANTY' : 'EXPIRED')
+  if (purchaseDate && /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) && productFromSerial(s)) {
+    const until = addMonths(purchaseDate, WARRANTY_PERIOD_MONTHS)
+    return { status: statusOf(until), until, basis: 'CUSTOMER_INPUT' }
+  }
+  const month = s in MANUFACTURE_MONTH ? MANUFACTURE_MONTH[s] : productFromSerial(s)?.manufacturedAt.slice(0, 7)
+  if (!month) return { status: 'UNKNOWN', basis: 'MANUFACTURE_DATE_ESTIMATE' }
+  const until = addMonths(`${month}-01`, SHIP_MONTHS + WARRANTY_PERIOD_MONTHS)
+  return { status: statusOf(until), until, basis: 'MANUFACTURE_DATE_ESTIMATE' }
 }

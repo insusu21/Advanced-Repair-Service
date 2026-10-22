@@ -68,6 +68,7 @@ const greeting = computed(() => {
         <StatCard label="수리 완료" :value="list.counts.completed" :icon="CircleCheck" tone="success" hint="리포트 확정 · 고장 DB 반영" @select="goList('CLOSED')" />
       </div>
 
+      <div class="home-grid">
       <section class="card">
         <div class="card-head">
           <h2>지금 처리할 일 <span class="badge tone-warning">{{ todo.length }}건</span></h2>
@@ -99,6 +100,7 @@ const greeting = computed(() => {
         <StateView v-else-if="!recent.length && !list.error" state="empty" title="접수된 수리 건이 없습니다" compact />
         <RepairTable v-else :items="recent" :role="auth.role" :show-tech="false" />
       </section>
+      </div>
     </template>
 
     <!-- ===== 본사 품질 담당자: 발주 승인 · 고장 통계 ===== -->
@@ -141,6 +143,18 @@ const greeting = computed(() => {
 </template>
 
 <style scoped>
+/* 지금 처리할 일 | 최근 수리 건 — 표가 넓어 아주 넓은 화면에서만 2칸, 그 외에는 위아래 */
+.home-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--gap);
+  align-items: start;
+}
+@media (min-width: 1600px) {
+  .home-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
 .dash-link {
   display: flex;
   align-items: center;
@@ -157,9 +171,9 @@ const greeting = computed(() => {
   place-items: center;
   width: 44px;
   height: 44px;
-  border-radius: var(--radius);
-  background: var(--navy-50);
-  color: var(--navy-800);
+  border-radius: 50%;
+  background: var(--blue-50);
+  color: var(--primary);
   flex: none;
 }
 .todo {

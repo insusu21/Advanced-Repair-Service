@@ -199,4 +199,13 @@ function reset() {
     display: none;
   }
 }
+/* 휴대폰: 이름이 한 글자씩 줄바꿈되지 않게 숨김 (역할·이름은 홈 화면 인사말에 표시) */
+@media (max-width: 480px) {
+  .name {
+    display: none;
+  }
+  .topbar {
+    gap: 6px;
+  }
+}
 </style>

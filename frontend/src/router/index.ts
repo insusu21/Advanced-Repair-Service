@@ -16,6 +16,8 @@ const ALL: Role[] = ['TECHNICIAN', 'QUALITY_MANAGER']
 
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true, title: '로그인' } },
+  // 소비자용 수리 진행 조회 (로그인 없음, 기사용 레이아웃 밖)
+  { path: '/track', name: 'customer-track', component: () => import('@/views/CustomerTrackView.vue'), meta: { public: true, title: '수리 진행 조회' } },
   {
     path: '/',
     component: AppLayout,
