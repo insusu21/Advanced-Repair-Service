@@ -7,14 +7,12 @@ from pydantic import Field
 
 from .config import read_json
 from .labels import SURFACE_DEFECTS, interpret_damage_labels, interpret_pcb_labels
-from .models import AgentCase, LegacyDamageLabel, SearchRequest
+from .models import LegacyDamageLabel, SearchRequest
 from .normalize import normalize_observations
 
 READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
              "openWorldHint": False}
 AI_READ_ONLY = {**READ_ONLY, "idempotentHint": False, "openWorldHint": True}
-# [통합] 평가표 "rag-mcp 조회·변경 도구". 덮어쓰기만 하고 지우지 않는다. 같은 case_id면 같은 결과
-WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
 
 
 def create_server(service: str, store=None) -> FastMCP:
@@ -30,7 +28,7 @@ def create_server(service: str, store=None) -> FastMCP:
     instance = [store]
     init_lock = threading.Lock()
     mcp = FastMCP(f"{service}-mcp", lifespan=lifespan,
-                 instructions="Interpretation/retrieval. Only save_repair_case writes (unconfirmed agent cases, not indexed). Model labels are observations, not confirmed fault causes.")
+                 instructions="Read-only interpretation/retrieval. Model labels are observations, not confirmed fault causes.")
     if service == "observation":
         @mcp.tool(annotations=AI_READ_ONLY)
         def normalize_observation(raw_text: Annotated[str, Field(min_length=1, max_length=2000)],
@@ -85,19 +83,6 @@ def create_server(service: str, store=None) -> FastMCP:
                                        min_score: Annotated[float, Field(ge=-1, le=1)] = 0.75) -> dict:
             """PCB/파손 문서의 독립 dense 검색. 사례와 문서의 출처 유형을 분리."""
             return {"documents": get_store().search(collection, query, top_k, min_score)}
-
-        @mcp.tool(annotations=WRITE)
-        def save_repair_case(case: AgentCase) -> dict:
-            """에이전트 진단을 '미확정 사례'로 저장(변경). 같은 case_id는 덮어씀.
-            기사 확인 전이라 검색 색인(repair_cases)에는 넣지 않는다. 저장 위치: .runtime/agent_cases.jsonl"""
-            from .case_store import save_case
-            return save_case(case.model_dump())
-
-        @mcp.tool(annotations=READ_ONLY)
-        def list_saved_cases(limit: Annotated[int, Field(ge=1, le=50)] = 10) -> dict:
-            """save_repair_case로 저장한 미확정 사례를 최근 순으로 조회."""
-            from .case_store import list_cases
-            return {"cases": list_cases(limit)}
     else:
         raise ValueError(f"Unknown MCP service: {service}")
     return mcp

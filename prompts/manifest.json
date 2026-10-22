@@ -15,8 +15,8 @@
     },
     "write_report": {
       "file": "write_report.md",
-      "version": "1.1.0",
-      "sha256": "16d0ed8b593674c1c341e36498eae87b3d27c6eb8513eb0c03b6d9eefcc8471a",
+      "version": "1.0.0",
+      "sha256": "efdfe415b4df11f85d830d5fb555757c213b1c6b0c7b27495fcb2fdbd8a64098",
       "output_schema": "Report"
     }
   }
