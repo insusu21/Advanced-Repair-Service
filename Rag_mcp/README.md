@@ -6,6 +6,8 @@
 
 **실행 방법과 팀 연동:** [MCP 사용 안내](docs/mcp_usage.md) · [실제 검색 실험](experiments/results/summary.md)
 
+**확정 보고서 자동 반영:** [설정·시연 방법](docs/confirmed_case_sync.md). Spring의 기존 내부 API를 30초마다 읽어 신규/수정 보고서를 Qdrant에 반영하고 공개 사례와 함께 검색한다. `REPAIR_SYNC_ENABLED=true`로 활성화한다.
+
 ## 구성
 
 ```text
@@ -54,7 +56,7 @@ PCB 기술 문서는 분류 용어 참고 1개와 Repair Wiki 기술 가이드 �
 
 현재 회사 SQL의 repair_case / repair_report / confirmed_fault는 회사가 실제로 관리하는 건에 사용한다. 외부 공개 기록에는 필수 product_id, center_id, technician_id가 없으므로 가짜 외래키를 만들어 집어넣지 않는다.
 
-이 준비본은 출처를 가진 외부 문서로 색인한다. 회사의 신규 수리 확정 건은 이후 별도 export를 통해 같은 repair_cases 컬렉션에 넣을 수 있다. external_community_repair_record와 internal_confirmed_repair를 구분한다.
+공개 자료는 출처를 가진 외부 문서로 색인한다. 회사의 확정 건은 Spring `/internal/confirmed-cases`를 통해 사내 전용 컬렉션에 동기화하고, 같은 RAG 검색에서 공개 사례와 통합 반환한다. `external_community_repair_record`와 `internal_confirmed_repair`를 구분한다. 보고서 확정/수정은 Spring이 담당한다.
 
 ## 구현과 검증
 
