@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import asyncio
+import os
 import threading
 from typing import Annotated, Literal
 
@@ -17,20 +19,31 @@ AI_READ_ONLY = {**READ_ONLY, "idempotentHint": False, "openWorldHint": True}
 WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
 
 
-def create_server(service: str, store=None) -> FastMCP:
+def create_server(service: str, store=None, sync_service=None) -> FastMCP:
     @asynccontextmanager
     async def lifespan(server):
         try:
+            if service == "rag":
+                sync = get_sync()
+                if sync is not None:
+                    sync.start()
             yield {}
         finally:
+            if service == "rag" and synchronizer[0] is not None:
+                await asyncio.to_thread(synchronizer[0].stop)
             if service == "rag" and instance[0] is not None and store is None:
                 instance[0].close()
                 instance[0] = None
 
     instance = [store]
+    synchronizer = [sync_service]
     init_lock = threading.Lock()
+    sync_init_lock = threading.Lock()
+    sync_enabled = sync_service is not None or os.environ.get("REPAIR_SYNC_ENABLED", "false").lower() in {"1", "true", "yes"}
     mcp = FastMCP(f"{service}-mcp", lifespan=lifespan,
-                 instructions="Interpretation/retrieval. Only save_repair_case writes (unconfirmed agent cases, not indexed). Model labels are observations, not confirmed fault causes.")
+                 instructions="Interpretation/retrieval of evidence. Model labels are observations, not confirmed fault causes. "
+                 "Only save_repair_case writes (unconfirmed agent cases, not indexed). "
+                 "Optional report sync imports only technician-confirmed reports from the configured Spring service into the search index; it never changes business records.")
     if service == "observation":
         @mcp.tool(annotations=AI_READ_ONLY)
         def normalize_observation(raw_text: Annotated[str, Field(min_length=1, max_length=2000)],
@@ -68,6 +81,44 @@ def create_server(service: str, store=None) -> FastMCP:
                     from .retrieval import DenseStore
                     instance[0] = DenseStore()
                 return instance[0]
+
+        def get_sync():
+            if not sync_enabled:
+                return None
+            with sync_init_lock:
+                if synchronizer[0] is None:
+                    from .sync import ConfirmedCaseSync
+                    synchronizer[0] = ConfirmedCaseSync.from_env(get_store())
+                return synchronizer[0]
+
+        @mcp.tool(annotations=READ_ONLY)
+        def get_case_sync_status() -> dict:
+            """확정 보고서 자동 동기화 상태와 저장 건수. 토큰·보고서 원문을 노출하지 않음."""
+            sync = get_sync()
+            if sync is None:
+                return {"enabled": False, "running": False, "last_run": None,
+                        "indexed_reports": get_store().internal_case_count()}
+            return sync.status()
+
+        if sync_enabled:
+            @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False,
+                                   "idempotentHint": True, "openWorldHint": False})
+            def sync_confirmed_cases() -> dict:
+                """설정된 Spring 내부 API의 확정 보고서를 지금 색인. 데모·운영자용.
+                임의 보고서·URL을 받지 않고 미확정 보고서를 제외한다. Spring DB는 수정하지 않는다.
+                """
+                return get_sync().sync_once()
+
+        @mcp.tool(annotations=READ_ONLY)
+        def search_repair_cases(query: Annotated[str, Field(min_length=1, max_length=2000)],
+                                top_k: Annotated[int, Field(ge=1, le=20)] = 3,
+                                min_score: Annotated[float, Field(ge=-1, le=1)] = 0.75,
+                                repair_status: Literal["Fixed", "Repairable", "End of life", "Unknown",
+                                                       "Not fixed", "No fault found"] | None = None) -> dict:
+            """공개·사내 확정 사례를 함께 검색. LLM 소견 생성 없이 출처·점수·사례 반환."""
+            from .retrieval import brief_cases
+            cases = get_store().search("repair_cases", query, top_k, min_score, repair_status)
+            return {"repair_cases": cases, "case_briefs": brief_cases(cases), "diagnosis_confirmed": False}
 
         @mcp.tool(annotations=AI_READ_ONLY)
         def retrieve_repair_context(request: SearchRequest) -> dict:

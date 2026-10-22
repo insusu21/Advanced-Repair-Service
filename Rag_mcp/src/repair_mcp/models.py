@@ -24,7 +24,7 @@ class SearchRequest(StrictModel):
     top_k: int = Field(default=5, ge=1, le=20)
     # Relevance cutoff is experimental, NOT diagnosis confidence.
     min_score: float = Field(default=0.75, ge=-1, le=1)
-    repair_status: Literal["Fixed", "Repairable", "End of life", "Unknown"] | None = None
+    repair_status: Literal["Fixed", "Repairable", "End of life", "Unknown", "Not fixed", "No fault found"] | None = None
     use_bilingual_hints: bool = True
 
 
