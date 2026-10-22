@@ -4,12 +4,12 @@ import { ApiError, http, mockDelay, USE_MOCK } from './http'
 import * as mock from '@/mocks/handlers'
 import { partApi } from './parts'
 import { STATUS_GROUPS } from '@/constants/status'
-import { latestTask, toPhotoRequest, toProductInfo, toRepair, toRepairDetail } from './adapters/repair'
+import { latestTask, toPhotoRequest, toProductInfo, toRepair, toRepairDetail, toTools } from './adapters/repair'
 import { toBeContent, toRepairReport } from './adapters/report'
 import { toDiagnosis } from './adapters/diagnosis'
 import { toBeRepairStatus } from './adapters/status'
 import type { BeAccepted, BeProduct, BeReport, BeRepairDetail, BeRepairPage, BeTask, BeToolExecution, BeUploaded } from './adapters/types'
-import type { Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
+import type { AnalysisToolRun, Diagnosis, Page, PhotoRequest, ProductInfo, Repair, RepairImage, RepairQuery, RepairStatusCounts, RepairSummaryCounts } from '@/types'
 import type {
   AdditionalInfoRequest,
   ApprovalRequest,
@@ -47,10 +47,17 @@ async function fetchReport(id: number): Promise<BeReport | null> {
     throw e
   }
 }
+/** GET /api/repairs/{id}/diagnosis/tools — 진단 전이거나 없으면 빈 배열 */
+const fetchTools = (id: number) =>
+  http
+    .get<BeToolExecution[]>(`/repairs/${id}/diagnosis/tools`)
+    .then((r) => r.data)
+    .catch(() => [] as BeToolExecution[])
+
 async function realGet(id: number, fresh = false): Promise<Repair> {
-  const d = await fetchDetail(id, fresh)
+  const [d, execs] = await Promise.all([fetchDetail(id, fresh), fetchTools(id)])
   const report = d.reports?.length ? await fetchReport(id) : null
-  return toRepairDetail(d, report ? toRepairReport(report) : undefined)
+  return toRepairDetail(d, report ? toRepairReport(report) : undefined, toTools(execs))
 }
 
 /** 목록 요약 카운트 (화면 상단 카드) */
@@ -92,10 +99,7 @@ async function realList(q: RepairQuery): Promise<RepairListResponse> {
       : items.filter((r) => [r.receiptNo, r.product.serialNumber, r.product.model, r.symptom, ...r.errorCodes].some((v) => v.toLowerCase().includes(k)))
   }
   const sort = q.sort ?? 'receivedAt_desc'
-  const RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 }
-  items = [...items].sort((a, b) =>
-    sort === 'urgency' ? RANK[a.urgency] - RANK[b.urgency] || b.receivedAt.localeCompare(a.receivedAt) : sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt),
-  )
+  items = [...items].sort((a, b) => (sort === 'receivedAt_asc' ? a.receivedAt.localeCompare(b.receivedAt) : b.receivedAt.localeCompare(a.receivedAt)))
   // 상태별 건수(statusCounts)는 백엔드에 없음 → 빈 객체 = 칩 건수 숨김
   return { items, total: items.length, counts: summarize(all), statusCounts: {} }
 }
@@ -137,8 +141,8 @@ export const repairApi = {
       symptoms: req.symptom,
       errorCodes: req.errorCodes,
       firmware: req.product.firmware,
-      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·긴급도·기사 소견 복원에 사용
-      userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind), urgency: req.urgency },
+      // 백엔드 user_input 에 그대로 저장 → 상세 조회 시 사진 종류·기사 소견 복원에 사용
+      userInput: { technicianNote: req.technicianNote ?? '', photoKinds: photos.map((p) => p.kind) },
     }
     const f = new FormData()
     f.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
@@ -165,6 +169,12 @@ export const repairApi = {
   async submit(id: number): Promise<Repair> {
     if (USE_MOCK) return mockDelay(() => mock.submitRepair(id))
     throw notSupported('단계별 접수')
+  },
+
+  /** '분석 진행' 단계의 실행 도구 목록 — 실서버: GET /api/repairs/{id}/diagnosis/tools (TOOL_EXECUTED 수신 시 재조회) */
+  async tools(id: number): Promise<AnalysisToolRun[]> {
+    if (USE_MOCK) return mockDelay(() => mock.getRepair(id).tools ?? [], 100)
+    return toTools(await fetchTools(id))
   },
 
   /** 추가 사진 요청 — 실서버는 상세(photoRequests)에서 꺼냄 */
@@ -205,10 +215,7 @@ export const repairApi = {
         .get<BeTask>(`/repairs/${id}/diagnosis`)
         .then((r) => r.data)
         .catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))),
-      http
-        .get<BeToolExecution[]>(`/repairs/${id}/diagnosis/tools`)
-        .then((r) => r.data)
-        .catch(() => [] as BeToolExecution[]),
+      fetchTools(id),
       partApi.list().catch(() => []),
       fetchDetail(id),
     ])

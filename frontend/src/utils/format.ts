@@ -30,12 +30,6 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('ko-KR')
 }
 
-export function confidenceLevel(v: number): { label: string; tone: 'success' | 'warning' | 'danger' } {
-  if (v >= 80) return { label: '높음', tone: 'success' }
-  if (v >= 60) return { label: '보통', tone: 'warning' }
-  return { label: '낮음', tone: 'danger' }
-}
-
 export function uid(prefix = 'id'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-3)}`
 }

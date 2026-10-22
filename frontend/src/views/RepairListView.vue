@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, PlusCircle, X, Camera, UserCheck, FileCheck2, CircleCheck, RefreshCw } from 'lucide-vue-next'
+import { Search, X, Camera, UserCheck, FileCheck2, CircleCheck, RefreshCw } from 'lucide-vue-next'
 import StatCard from '@/components/common/StatCard.vue'
 import StateView from '@/components/common/StateView.vue'
 import SkeletonBlock from '@/components/common/SkeletonBlock.vue'
@@ -86,10 +86,7 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.gr
           <span v-if="store.loadedAt" class="faint"> · {{ formatRelative(store.loadedAt) }} 갱신 · 실시간 반영 중</span>
         </p>
       </div>
-      <div class="row">
-        <button class="btn" type="button" :disabled="store.loading" @click="store.fetch()"><RefreshCw :size="18" :class="{ spin: store.loading }" /> 새로고침</button>
-        <RouterLink v-if="auth.role === 'TECHNICIAN'" to="/repairs/new" class="btn btn-primary"><PlusCircle :size="20" /> 신규 수리 접수</RouterLink>
-      </div>
+      <button class="btn" type="button" :disabled="store.loading" @click="store.fetch()"><RefreshCw :size="18" :class="{ spin: store.loading }" /> 새로고침</button>
     </div>
 
     <div class="grid-4">
@@ -118,7 +115,6 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.gr
           <select id="sort" v-model="store.query.sort" class="select" @change="onSort">
             <option value="receivedAt_desc">최근 접수순</option>
             <option value="receivedAt_asc">오래된 접수순</option>
-            <option value="urgency">긴급도순</option>
           </select>
         </div>
         <button v-if="filtered" type="button" class="btn btn-ghost" @click="clearAll"><X :size="18" /> 필터 초기화</button>
@@ -163,7 +159,6 @@ const filtered = computed(() => store.query.status !== 'ALL' || !!store.query.gr
       <StateView v-else-if="store.error" state="error" :message="store.error" @retry="store.fetch()" />
       <StateView v-else-if="!store.items.length" state="empty" :title="filtered ? '조건에 맞는 수리 건이 없습니다' : '접수된 수리 건이 없습니다'" :message="filtered ? '검색어나 상태 필터를 바꿔 보세요.' : undefined">
         <button v-if="filtered" class="btn" type="button" @click="clearAll">필터 초기화</button>
-        <RouterLink v-else-if="auth.role === 'TECHNICIAN'" to="/repairs/new" class="btn btn-primary">신규 수리 접수</RouterLink>
       </StateView>
       <template v-else>
         <p class="faint count" aria-live="polite">{{ store.items.length }}건</p>

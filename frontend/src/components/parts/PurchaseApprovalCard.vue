@@ -74,7 +74,7 @@ function decide(action: 'APPROVE' | 'REJECT') {
         <AiBadge compact label="AI 발주 제안" />
         <p class="faint">수리 ID <RouterLink :to="`/repairs/${order.repairId}/diagnosis`" class="mono">{{ repairId(order.repairId) }}</RouterLink></p>
         <p><strong>AI 추천 이유</strong><br />{{ order.aiReason }}</p>
-        <ConfidenceBar v-if="order.aiConfidence" :value="order.aiConfidence" label="진단 신뢰도" size="sm" />
+        <ConfidenceBar v-if="order.aiConfidence" :value="order.aiConfidence" size="sm" />
         <p class="faint">AI 는 발주안을 제안만 합니다. 담당자가 확인·승인해야 발주가 등록됩니다.</p>
       </div>
 

@@ -84,7 +84,7 @@ export function toProcurementDrafts(p: BeProcurement, repairId: number, parts: P
         quantity,
         fromWarehouse: best?.warehouse ?? '',
         aiReason: String(x.reason ?? x.rationale ?? 'AI 조달 제안'),
-        aiConfidence: typeof x.confidence === 'number' ? Math.round(x.confidence <= 1 ? x.confidence * 100 : x.confidence) : 0,
+        aiConfidence: typeof x.confidence === 'number' ? Math.round(Math.max(0, Math.min(1, x.confidence)) * 100) : 0,
         sourceIds: [],
         status: 'AI_DRAFT',
         decision: { state: 'PENDING' },

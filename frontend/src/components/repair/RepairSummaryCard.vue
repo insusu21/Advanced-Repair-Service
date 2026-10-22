@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import RepairStatusBadge from '@/components/common/RepairStatusBadge.vue'
-import { URGENCY_META } from '@/constants/status'
 import { formatDateTime, repairId } from '@/utils/format'
 import type { Repair } from '@/types'
 
@@ -14,7 +13,6 @@ defineProps<{ repair: Repair; compact?: boolean }>()
         <div class="row">
           <span class="mono rno">수리 ID {{ repairId(repair.id) }}</span>
           <RepairStatusBadge :status="repair.status" :failed="!!repair.analysisError" />
-          <span class="badge" :class="`tone-${URGENCY_META[repair.urgency].tone}`">긴급도 {{ URGENCY_META[repair.urgency].label }}</span>
         </div>
         <h2>{{ repair.product.modelName }}</h2>
       </div>
