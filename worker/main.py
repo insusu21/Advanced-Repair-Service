@@ -88,6 +88,19 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
                 execution = json.loads(row[0])
         path = report.save(command, result, execution=execution)
         await flush(journal, command, producer)
+        if result["eventType"] in ("DIAGNOSIS_COMPLETED", "DIAGNOSIS_FAILED"):
+            status = "SUCCEEDED" if result["eventType"] == "DIAGNOSIS_COMPLETED" else "FAILED"
+            outcome = {
+                "commandEventId": command["eventId"],
+                "taskId": command["taskId"],
+                "executionId": command["executionId"],
+                "status": status,
+            }
+            await producer.send_and_wait(
+                C.PROCESSING_STATUS_TOPIC,
+                json.dumps(outcome).encode(),
+                key=command["taskId"].encode(),
+            )
         if result["payload"].get("errorCode") in harness.LIMIT_CODES | {
                 "AGENT_ERROR", "GRAPH_STEP_LIMIT", "REQUIRED_TOOL_FAILED", "PROMPT_CONFIG_ERROR", "TOOL_TIMEOUT"}:
             await producer.send_and_wait(C.DLT_TOPIC, json.dumps(command).encode(), key=command["taskId"].encode())

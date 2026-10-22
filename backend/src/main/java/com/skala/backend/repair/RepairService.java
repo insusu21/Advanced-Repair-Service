@@ -98,6 +98,22 @@ public class RepairService {
         db.update("UPDATE procurement_job SET attempts=0,next_attempt_at=now(),lease_until=NULL WHERE case_id=?",repair);
         db.update("UPDATE repair_case SET procurement_status='PENDING' WHERE id=?",repair);db.audit(access.user().email,"PROCUREMENT_RETRIED",repair,Map.of());
     }
+    @Transactional public void retryFailedDiagnosis(Long taskId) {
+        var failed=db.list("SELECT * FROM diagnosis_job WHERE id=? AND status='FAILED' FOR UPDATE",taskId);
+        if(failed.isEmpty()) return;
+        var old=failed.getFirst(); Long repair=Json.id(old.get("case_id"));
+        db.one("SELECT id FROM repair_case WHERE id=? FOR UPDATE",repair);
+        // Only retry the latest failed diagnosis, with at most three replacement jobs per case.
+        var latest=db.one("SELECT id,status FROM diagnosis_job WHERE case_id=? ORDER BY created_at DESC,id DESC LIMIT 1",repair);
+        if(!taskId.equals(Json.id(latest.get("id"))) || !"FAILED".equals(latest.get("status"))) return;
+        long jobs=Json.number(db.one("SELECT count(*) AS n FROM diagnosis_job WHERE case_id=?",repair).get("n"));
+        if(jobs>=4) return;
+        Long retry=db.insert("INSERT INTO diagnosis_job(case_id,request_key,workflow_version,retry_count) VALUES (?,?,?,?)",
+            repair,UUID.randomUUID(),old.get("workflow_version"),Math.max(1,Json.number(old.get("retry_count"))+1));
+        db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);
+        command(repair,retry,"DIAGNOSIS_REQUESTED",null,List.of());
+        db.event(repair,"DIAGNOSIS_RETRY_QUEUED",Map.of("taskId",retry,"retryOfTaskId",taskId,"retryCount",jobs));
+    }
     void command(Long repair,Long task,String type,Long request,List<Long> added) {
         var t=db.one("SELECT * FROM diagnosis_job WHERE id=?",task);var payload=analysisInput(repair,task);
         payload.put("attachmentIds",((List<?>)payload.get("attachments")).stream().map(a->((Map<?,?>)a).get("id")).toList());payload.put("addedAttachmentIds",added);payload.put("requestId",request);

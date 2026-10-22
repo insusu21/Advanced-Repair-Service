@@ -25,6 +25,7 @@ class MessagingConfig {
     }
     @Bean NewTopic commandsTopic() { return TopicBuilder.name("diagnosis.commands.v2").partitions(3).replicas(1).build(); }
     @Bean NewTopic eventsTopic() { return TopicBuilder.name("diagnosis.events.v2").partitions(3).replicas(1).build(); }
+    @Bean NewTopic processingStatusTopic() { return TopicBuilder.name("diagnosis.processing-status.v2").partitions(3).replicas(1).build(); }
 }
 @Component
 class ResultConsumer {
@@ -45,6 +46,28 @@ class ResultConsumer {
     @DltHandler public void dlt(ConsumerRecord<String,String> record) { events.deadLetter(record.value(),Math.max(0,retries(record)-1)); }
 }
 @Component
+class AgentProcessingStatusConsumer {
+    final Store db;
+    AgentProcessingStatusConsumer(Store db) { this.db=db; }
+    @RetryableTopic(attempts="4",backOff=@BackOff(delay=1000,multiplier=2),exclude={ApiError.class},numPartitions="3",replicationFactor="1",retryTopicSuffix=".retry",dltTopicSuffix=".dlt")
+    @KafkaListener(topics="diagnosis.processing-status.v2",groupId="repair-processing-status-v2")
+    @org.springframework.transaction.annotation.Transactional
+    public void status(ConsumerRecord<String,String> record) {
+        var message=Json.object(record.value());
+        Long task=Json.id(message.get("taskId"));
+        String commandEventId=String.valueOf(message.get("commandEventId"));
+        UUID.fromString(commandEventId);
+        String executionId=String.valueOf(message.get("executionId"));
+        UUID.fromString(executionId);
+        String status=String.valueOf(message.get("status"));
+        if(!Set.of("SUCCEEDED","FAILED").contains(status) || !task.toString().equals(record.key()))
+            throw new IllegalArgumentException("Invalid processing status message");
+        int updated=db.update("UPDATE outbox_event SET agent_status=?,agent_finished_at=now() WHERE job_id=? AND event_key=? AND payload->>'executionId'=? AND topic IS NOT NULL",
+            status,task,UUID.fromString(commandEventId),executionId);
+        if(updated!=1) throw new IllegalStateException("Command outbox row not found for processing status");
+    }
+}
+@Component
 class OutboxPublisher {
     final Store db; final KafkaTemplate<String,String> kafka; final TransactionTemplate tx;
     OutboxPublisher(Store db,KafkaTemplate<String,String> kafka,PlatformTransactionManager manager) { this.db=db;this.kafka=kafka;this.tx=new TransactionTemplate(manager); }
@@ -61,6 +84,17 @@ class OutboxPublisher {
                 db.update("UPDATE outbox_event SET lease_until=NULL,next_attempt_at=now()+(? * interval '1 second') WHERE id=?",delay,row.get("id"));
             }
         }
+    }
+}
+
+@Component
+class FailedDiagnosisRetryScheduler {
+    final Store db; final RepairService repairs;
+    FailedDiagnosisRetryScheduler(Store db,RepairService repairs) { this.db=db;this.repairs=repairs; }
+    @Scheduled(fixedDelayString="${app.failed-diagnosis-retry-delay:30000}")
+    public void retryFailed() {
+        var rows=db.list("SELECT j.id FROM diagnosis_job j WHERE j.status='FAILED' AND j.id=(SELECT j2.id FROM diagnosis_job j2 WHERE j2.case_id=j.case_id ORDER BY j2.created_at DESC,j2.id DESC LIMIT 1) AND (SELECT count(*) FROM diagnosis_job all_jobs WHERE all_jobs.case_id=j.case_id)<4 ORDER BY j.finished_at LIMIT 20");
+        for(var row:rows) repairs.retryFailedDiagnosis(Json.id(row.get("id")));
     }
 }
 
