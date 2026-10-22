@@ -57,19 +57,6 @@ cd Final_Robot-Vacuum-Repair-Agent
 | `docs/` | 진행사항·개조내역 | — |
 | `run.sh` / `stop.sh` / `setup.sh` | 실행 / 종료 / 처음 설치 | — |
 
-## 평가 항목과 코드 위치
-| 항목 | 어디서 보나 |
-|---|---|
-| Graph (노드·분기·반복) | `worker/graph.py` 맨 아래 `build_graph`: 사진 분류 → 증상 분리 → PCB·기계 MCP 동시 → RAG → 판단 → 부품 확인 → 리포트 / 사진 재요청(최대 3회) / 실패 |
-| 모델이 도구를 고름 | `worker/graph.py` `check_parts`: GPT가 업무 MCP 조회 도구 4개 중 골라 부르고 결과를 보고 더 부를지 정한다 (최대 4회) |
-| business-mcp 조회·변경 | `mcp_servers/business/server.py`: 조회(`get_part_availability` 등) + 변경(`create_purchase_order_draft`). Agent는 조회, Spring은 재고 조회 후 발주 초안 |
-| rag-mcp 조회·변경 | `Rag_mcp/src/repair_mcp/servers.py`: 조회(`retrieve_repair_context` 등) + 변경(`save_repair_case`: 진단을 미확정 사례로 저장, `list_saved_cases`로 확인) |
-| 상태 저장·재개 | 추가 사진 요청 → `WAITING_INPUT` → 사진 제출 → 재개 (`worker/journal.py`, Spring `diagnosis_job`) |
-| 진행 이벤트 | `DIAGNOSIS_PROGRESS`·`TOOL_EXECUTED` → 진단 화면 "도구 실행 이력" |
-| Harness | 호출 횟수·토큰·시간 제한, 재시도, 실패 표시 (`worker/harness.py`, [worker/AGENT.md](worker/AGENT.md)) |
-| 인증 | Spring Security 세션 로그인 + CSRF, 기사·품질관리자 역할 |
-| 대기열 | Kafka 명령/결과 토픽, 실패 시 `.retry` 재시도 4회 → `.dlt` (`backend/.../Messaging.java`), 워커 DLT (`worker/main.py`) |
-
 ## 실행 참고
 - `backend/.env`는 비워 둬도 된다. 비면 로컬 기본값을 쓴다. 워커는 `.env` 값을 셸보다 먼저 쓰니 `.env`에 다른 주소·토큰은 넣지 않는다.
 - 로그: `logs/` (spring, worker, mech, rag-*, business-mcp, business, front, auto_photo)
