@@ -42,3 +42,77 @@ def test_without_checkpointer_each_run_starts_empty(fixture_tools):
 
     state = asyncio.run(run())
     assert state["findings"], "체크포인터가 없어도 한 번의 실행은 정상 동작해야 한다"
+
+
+def test_pauses_for_more_photos_and_resumes_without_reanalyzing(fixture_tools):
+    """1차에서 결함을 못 찾으면 멈추고, 추가 사진으로 재개해 진단을 마친다."""
+    from worker import tools
+    clean = {**fixture_tools, "is_defective": False, "defects": []}
+    tools.call_pcb_mcp.return_value = clean
+
+    async def run():
+        async with AsyncSqliteSaver.from_conn_string(":memory:") as saver:
+            app = graph.build_graph(saver)
+            first = await harness.invoke(app, command(), AsyncMock())
+
+            paused = first.get("__interrupt__")
+            assert paused, "결함을 못 찾았으면 추가 자료를 기다리며 멈춰야 한다"
+            asked = paused[0].value
+
+            # 추가 사진이 들어오고, 이번에는 결함이 보인다
+            tools.call_pcb_mcp.return_value = {**fixture_tools, "is_defective": True,
+                                               "defects": [{"type": "short", "confidence": .8}]}
+            resumed = copy.deepcopy(command())
+            resumed["eventId"] = str(uuid.uuid4())
+            resumed["eventType"] = "DIAGNOSIS_RESUMED"
+            resumed["payload"]["round"] = 1
+            resumed["payload"]["checkpoint"] = asked["checkpoint"]
+            resumed["payload"]["attachments"] += [{"id": "2", "target": "PCB"}]
+            second = await harness.invoke(app, resumed, AsyncMock(), resume=resumed["payload"])
+            return asked, second
+
+    asked, second = asyncio.run(run())
+    assert asked["checkpoint"] == str(command()["taskId"])      # 재개 키를 그대로 돌려준다
+    assert asked["round"] == 1
+    assert second["result"]["eventType"] == "DIAGNOSIS_COMPLETED"
+    # 1차 사진은 이미 분석했으므로 재개 때 다시 부르지 않는다 (1차 1회 + 추가 1회)
+    from worker import tools as t
+    assert t.call_pcb_mcp.await_count == 2
+
+
+def test_worker_emits_pause_event_then_resumes_on_next_command(fixture_tools, tmp_path):
+    """워커 경로: 멈춤은 PHOTO_REQUESTED로 나가고, 다음 명령은 멈춘 지점에서 이어진다."""
+    from worker import main, tools
+    from worker.journal import Journal
+    tools.call_pcb_mcp.return_value = {**fixture_tools, "is_defective": False, "defects": []}
+
+    async def run():
+        async with AsyncSqliteSaver.from_conn_string(":memory:") as saver:
+            app = graph.build_graph(saver)
+            journal, producer = Journal(tmp_path / "state.db"), Producer()
+            try:
+                first = await main.handle(command(), producer, journal, graph=app)
+                tools.call_pcb_mcp.return_value = {**fixture_tools, "is_defective": True,
+                                                   "defects": [{"type": "short", "confidence": .8}]}
+                resumed = copy.deepcopy(command())
+                resumed["eventId"] = str(uuid.uuid4())
+                resumed["eventType"] = "DIAGNOSIS_RESUMED"
+                resumed["payload"]["round"] = 1
+                resumed["inputRevision"] = 2                       # 계약: 제출마다 +1
+                resumed["executionId"] = str(uuid.uuid4())
+                resumed["payload"]["requestId"] = "1"
+                resumed["payload"]["requestKey"] = first["payload"]["requestKey"]
+                resumed["payload"]["checkpoint"] = first["payload"]["checkpoint"]
+                extra = {**copy.deepcopy(resumed["payload"]["attachments"][0]), "id": "2"}
+                resumed["payload"]["attachments"] += [extra]
+                resumed["payload"]["attachmentIds"] = ["1", "2"]
+                resumed["payload"]["addedAttachmentIds"] = ["2"]
+                second = await main.handle(resumed, producer, journal, graph=app)
+                return first, second, producer
+            finally:
+                journal.close()
+
+    first, second, producer = asyncio.run(run())
+    assert first["eventType"] == "PHOTO_REQUESTED" and first["payload"]["requestKey"]
+    assert second["eventType"] == "DIAGNOSIS_COMPLETED"
+    assert [e["eventType"] for e in producer.events].count("DIAGNOSIS_COMPLETED") == 1

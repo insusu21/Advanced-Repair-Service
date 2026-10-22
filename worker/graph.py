@@ -11,6 +11,7 @@ import os
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
 from . import config as C
 from . import tools
@@ -59,6 +60,10 @@ async def emit(config, event_type: str, payload: dict):
 async def classify_photos(state: State, config) -> dict:
     await emit(config, "DIAGNOSIS_PROGRESS", {"stage": "CLASSIFYING_PHOTOS"})
     photos = await tools.load_photos(state["command"])
+    # 재개한 경우 이미 분석이 끝난 사진은 다시 모델에 넣지 않는다.
+    analyzed = {f.get("attachmentId") for f in state.get("findings", [])
+                if f.get("source") in ("PCB", "MECH") and not f["output"].get("error")}
+    photos = [p for p in photos if p["attachmentId"] not in analyzed]
     failures = []
     for p in photos:
         # 이미 구분해 접수한 사진은 그 구분을 사용. GENERAL/미지정은 원본 GPT 분류 유지.
@@ -327,8 +332,21 @@ async def request_photo(state: State, config) -> dict:
     if note:
         description += "\n" + note
     payload = {"round": cmd["payload"]["round"] + 1, "bodyPart": target,
-               "description": description, "checkpoint": f"task-{cmd['taskId']}", **details}
+               "description": description, **details,
+               # 재개할 상태를 가리키는 값. Spring이 보관했다가 재개 명령에 그대로 실어 돌려준다.
+               "checkpoint": config["configurable"]["thread_id"]}
     return {"result": {"eventType": "PHOTO_REQUESTED", "payload": payload}}
+
+
+async def wait_input(state: State, config) -> dict:
+    """추가 자료가 올 때까지 멈춘다.
+
+    재개하면 이 노드가 처음부터 다시 실행되므로 횟수 증가·이벤트 발행 같은 부작용은
+    앞 노드와 워커에 두고 여기서는 멈추기만 한다. 재개되면 이전 결과를 비우고
+    새 자료를 포함해 다시 분석한다.
+    """
+    interrupt(state["result"]["payload"])
+    return {"result": None}
 
 
 async def fail(state: State, config) -> dict:
@@ -343,7 +361,8 @@ async def fail(state: State, config) -> dict:
 
 def build_graph(checkpointer=None):
     g = StateGraph(State)
-    for fn in (classify_photos, split_text, pcb_mcp, mech_mcp, rag_mcp, judge, report, request_photo, fail):
+    for fn in (classify_photos, split_text, pcb_mcp, mech_mcp, rag_mcp, judge, report,
+               request_photo, wait_input, fail):
         g.add_node(fn.__name__, observed(fn))
 
     g.add_edge(START, "classify_photos")
@@ -353,6 +372,12 @@ def build_graph(checkpointer=None):
         g.add_edge(mcp, "rag_mcp")  # 사진 MCP가 다 끝나면 rag에서 합류 (PCB 라벨을 넘기려고)
     g.add_edge("rag_mcp", "judge")
     g.add_conditional_edges("judge", lambda s: s["decision"], {"COMPLETE": "report", "PHOTO": "request_photo", "FAIL": "fail"})
-    for end in ("report", "request_photo", "fail"):
+    for end in ("report", "fail"):
         g.add_edge(end, END)
+    if checkpointer is None:
+        # 멈춤은 상태를 저장할 수 있을 때만 가능하다. 없으면 기존처럼 결과를 내고 끝낸다.
+        g.add_edge("request_photo", END)
+    else:
+        g.add_edge("request_photo", "wait_input")
+        g.add_edge("wait_input", "classify_photos")  # 재개하면 새 자료로 다시 분석
     return g.compile(checkpointer=checkpointer)

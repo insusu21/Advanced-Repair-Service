@@ -39,6 +39,15 @@ async def flush(journal, command, producer):
             journal.db.execute("UPDATE events SET sent=1 WHERE job=? AND seq=?", (command["eventId"], seq))
 
 
+async def waiting_for_input(graph, command) -> bool:
+    """이 작업이 추가 자료를 기다리며 멈춰 있는가. 체크포인터가 없으면 항상 아니다."""
+    try:
+        snapshot = await graph.aget_state({"configurable": {"thread_id": harness.thread_id(command)}})
+    except Exception:
+        return False
+    return any(task.interrupts for task in snapshot.tasks)
+
+
 async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=None):
     """완료 결과·이벤트를 먼저 저장하고 전송. 전송 재시도에서는 모델을 다시 부르지 않는다."""
     owned = journal is None
@@ -60,8 +69,12 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=
             await emit("DIAGNOSIS_STARTED", {"stage": "STARTED"})
             try:
                 metrics = {}
-                state = await harness.invoke(graph or GRAPH, command, emit, metrics)
-                result = check_event_size(masked(state["result"]))
+                app = graph or GRAPH
+                resume = command["payload"] if await waiting_for_input(app, command) else None
+                state = await harness.invoke(app, command, emit, metrics, resume)
+                paused = state.get("__interrupt__")
+                result = check_event_size(masked(
+                    {"eventType": "PHOTO_REQUESTED", "payload": paused[0].value} if paused else state["result"]))
                 if result["eventType"] == "PHOTO_REQUESTED":
                     result["payload"]["requestKey"] = str(uuid.uuid5(uuid.NAMESPACE_URL, command["eventId"] + ":photo"))
                 journal.finish(command, result)  # JSON 계약 위반도 아래 실패 결과로 처리
