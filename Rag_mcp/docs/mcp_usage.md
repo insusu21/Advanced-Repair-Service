@@ -129,11 +129,7 @@ LangGraph 쪽에서는 이 주소들을 MCP Client에 등록한다. Docker 안�
 
 - `observation`, `pcb`, `damage`: 입력별 해석과 출처.
 - `repair_cases`: 출처 ID·URL·원문·기존 수리 상태·검색 점수를 가진 외부 사례.
-- `case_briefs`: 화면용 상위 3건의 사례 ID와 한 줄 내용, 공개/사내 출처 표시. 전체 근거는 `repair_cases`에 남는다.
-
-사내 확정 보고서 자동 동기화 및 즉시 동기화 도구는 [확정 사례 동기화 안내](confirmed_case_sync.md)를 참고한다.
-`search_repair_cases`는 LLM 호출 없이 공개·사내 사례를 함께 검색한다.
-`get_case_sync_status`는 상태/누적 건수를 반환하고, 동기화 활성화 시에만 `sync_confirmed_cases` 쓰기 도구가 노출된다.
+- `case_briefs`: 화면용 상위 3건의 사례 ID와 한 줄 내용. 전체 근거는 `repair_cases`에 남는다.
 - `label_definitions`: 정확한 라벨 ID로 찾은 정의. 유사 사례나 제조사 수리 지침이 아님.
 - `pcb_references`: 별도로 검색된 기술 참고문서. 대상 제품이 다를 수 있음.
 - `pcb_guidance`: 정확한 PCB 라벨로 조회한 팀 점검 지침. 의미·확인 순서·조건부 조치 포함. 원본 초안의 추가 질문은 응답에서 제외.

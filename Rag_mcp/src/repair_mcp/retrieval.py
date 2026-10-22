@@ -15,14 +15,13 @@ from .models import SearchRequest
 from .normalize import normalize_observations
 from .guidance import retrieve_guidance, integrate_evidence
 from .opinion import generate_final_opinion
-from .internal_cases import InternalCasesMixin
 
 MODEL = "intfloat/multilingual-e5-small"
 MODEL_REVISION = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
 CHUNK_TOKENS = 420
 
 
-class DenseStore(InternalCasesMixin):
+class DenseStore:
     def __init__(self, client=None, encoder=None):
         self.model_name = os.environ.get("REPAIR_EMBED_MODEL", MODEL)
         self.revision = os.environ.get("REPAIR_EMBED_REVISION", MODEL_REVISION)
@@ -108,17 +107,10 @@ class DenseStore(InternalCasesMixin):
             if repair_status:
                 conditions.append(qm.FieldCondition(key="source_repair_status",
                                                      match=qm.MatchValue(value=repair_status)))
-            names = [self.names[group]]
-            if group == "repair_cases" and self.client.collection_exists(self.internal_collection):
-                names.append(self.internal_collection)
-            vector = self._encode([query], "query: ")[0]
-            points = []
-            for name in names:
-                points.extend(self.client.query_points(
-                    name, query=vector, query_filter=qm.Filter(must=conditions),
-                    score_threshold=min_score, limit=top_k * 5, with_payload=True).points)
-            # Both collections use the same model/metric; do not boost internal cases artificially.
-            points.sort(key=lambda point: (-point.score, str(point.payload.get("document_id", ""))))
+            points = self.client.query_points(
+                self.names[group], query=self._encode([query], "query: ")[0],
+                query_filter=qm.Filter(must=conditions), score_threshold=min_score,
+                limit=top_k * 5, with_payload=True).points
             results, seen = [], set()
             for point in points:
                 doc = point.payload
@@ -178,22 +170,10 @@ def brief_cases(cases: list[dict]) -> list[dict]:
                  ("reported_symptom_ko", "reported_observations_ko", "reported_action_ko")]
         summary = "; ".join(part for part in parts if part)
         summary = summary or case.get("korean_summary") or case.get("original_text") or case.get("chunk_text", "")
-        # Some curated public records store Korean fields inside a summary object.
-        if isinstance(summary, dict):
-            summary = "; ".join(str(summary.get(key, "")) for key in
-                                ("reported_symptom_ko", "reported_observations_ko", "reported_action_ko")
-                                if summary.get(key))
-            summary = summary or case.get("original_text") or case.get("chunk_text", "")
-        if case.get("source_type") == "internal_confirmed_repair":
-            summary = case["korean_summary"]
         summary = re.sub(r"\s+", " ", summary).strip()
         if len(summary) > 160:
             summary = summary[:159].rstrip() + "…"
-        brief = {"case_id": case["document_id"], "summary": summary}
-        if case.get("source_type") in {"internal_confirmed_repair", "external_community_repair_record"}:
-            brief["source_label"] = ("사내 확정 사례" if case["source_type"] == "internal_confirmed_repair"
-                                     else "공개 사례")
-        briefs.append(brief)
+        briefs.append({"case_id": case["document_id"], "summary": summary})
     return briefs
 
 

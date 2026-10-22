@@ -27,8 +27,6 @@ SYSTEM_PROMPT = """당신은 청소기 수리 접수의 검색 근거를 읽고 
 최종 소견에는 부정된 증상이나 그 부품을 언급하지 말고, 그 부품의 점검도 제안하지 않는다.
 기사 진술을 확정 관찰로 바꾸지 않는다. '관찰됐다'보다 '소견상 보고됐다'고 표현한다.
 검색 점수를 고장 확률로 해석하지 않는다. 모델 라벨만으로 고장 원인·심각도·수리·교체를 확정하지 않는다.
-사내 사례의 확정 여부는 그 과거 보고서에만 해당한다. 현재 기기의 원인이 확정됐다는 뜻이 아니다.
-수리 미완료·고장 미발견 사례를 수리 성공 사례로 설명하지 않는다.
 추가 질문, 중요도·우선순위 등급, 근거 없는 부품·위치·측정값을 만들지 않는다.
 일치하는 사례가 없으면 supporting_case_ids는 빈 배열로 둔다.
 의견을 뒷받침하는 사례 ID가 있으면 제공된 ID 중 최대 3개만 supporting_case_ids에 기록한다.
@@ -74,8 +72,6 @@ def generate_final_opinion(observation, pcb, damage, cases, guidance):
         ],
         "similar_cases": [
             {"id": case["document_id"], "repair_status": case.get("source_repair_status"),
-             "source_type": case.get("source_type"),
-             "source_document_confirmed": case.get("source_document_confirmed", False),
              "excerpt": " ".join(case.get("original_text", case.get("chunk_text", "")).split())[:300]}
             for case in opinion_cases
         ],

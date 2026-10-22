@@ -29,8 +29,7 @@ def format_summary(result: dict) -> str:
 
     cases = result.get("case_briefs", [])[:3]
     lines += ["", f"[유사 사례 {len(cases)}건 — 확정 진단 아님]"]
-    lines += [f"{i}. {case['case_id']} | "
-              f"{case['source_label'] + ' | ' if case.get('source_label') else ''}{case['summary']}"
+    lines += [f"{i}. {case['case_id']} | {case['summary']}"
               for i, case in enumerate(cases, 1)] if cases else ["검색 후보 없음"]
     return "\n".join(lines)
 
