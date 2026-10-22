@@ -8,7 +8,6 @@ Spring에 진행 상황을 알릴 땐 emit(config, 이벤트종류, 내용)을 �
 """
 
 import os
-import operator
 from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -21,12 +20,31 @@ from .tool_policy import (check_image_result, check_object,
                           failure_output, limitation_note)
 
 
+def finding_key(finding: dict):
+    """같은 대상의 결과를 가리키는 키. 사진 분석은 사진 단위, 해석·검색은 도구 단위다."""
+    source = finding.get("source")
+    if source in ("PCB", "MECH", "CLASSIFICATION"):
+        return (source, finding.get("attachmentId"))
+    return (source, finding.get("output", {}).get("tool"))
+
+
+def merge_findings(old: list[dict], new: list[dict]) -> list[dict]:
+    """이어 붙이지 않고 키 기준으로 교체한다.
+
+    체크포인터로 이전 라운드 상태가 남아 있을 때 같은 사진이 두 번 집계되는 것과,
+    재시도로 성공한 뒤에도 이전 실패 기록이 남아 판정을 막는 것을 함께 막는다.
+    """
+    merged = {finding_key(f): f for f in old}
+    merged.update({finding_key(f): f for f in new})
+    return list(merged.values())
+
+
 class State(TypedDict, total=False):
     command: dict  # Kafka로 받은 명령 원문
     text: str  # 증상 + 기사 설명
     photos: list[dict]  # [{attachmentId, path, kind: PCB|MECH|OTHER}]
     clues: dict  # {pcb: [], mech: [], sw: [], errorCodes: []}
-    findings: Annotated[list[dict], operator.add]  # MCP 결과. 동시에 돌아도 덮어쓰지 않고 이어 붙인다
+    findings: Annotated[list[dict], merge_findings]  # MCP 결과. 같은 대상은 최신 결과로 교체한다
     decision: str  # COMPLETE | PHOTO | FAIL
     result: dict  # Spring에 보낼 마지막 이벤트 {eventType, payload}
 
@@ -57,7 +75,14 @@ async def classify_photos(state: State, config) -> dict:
                                  "found": False, "output": out})
                 await emit(config, "TOOL_EXECUTED", {"tool": "classify_photo", "toolVersion": "1",
                            "agentType": "RAG", "mcpServer": "agent-llm", "input": {}, "output": out})
-    return {"photos": photos, "findings": failures}
+    # 이전 라운드에서 분류가 실패했던 사진이 이번에 성공하면, 그 실패 기록을 덮는다.
+    failed_before = {f.get("attachmentId") for f in state.get("findings", [])
+                     if f.get("source") == "CLASSIFICATION" and f.get("output", {}).get("error")}
+    resolved = [{"source": "CLASSIFICATION", "attachmentId": p["attachmentId"], "found": False,
+                 "output": {"tool": "classify_photo", "status": "ok"}}
+                for p in photos
+                if p["attachmentId"] in failed_before and p["kind"] != "OTHER"]
+    return {"photos": photos, "findings": failures + resolved}
 
 
 # ── 2. 글 분리 ───────────────────────────────────────────
