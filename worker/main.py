@@ -19,6 +19,7 @@ from .context_policy import masked, check_event_size
 from .observability import configure_logging
 from langgraph.errors import GraphRecursionError
 from .graph import build_graph
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 log = logging.getLogger("worker")
 GRAPH = build_graph()
@@ -38,7 +39,7 @@ async def flush(journal, command, producer):
             journal.db.execute("UPDATE events SET sent=1 WHERE job=? AND seq=?", (command["eventId"], seq))
 
 
-async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
+async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=None):
     """완료 결과·이벤트를 먼저 저장하고 전송. 전송 재시도에서는 모델을 다시 부르지 않는다."""
     owned = journal is None
     journal = journal or Journal(C.STATE_PATH)
@@ -59,7 +60,7 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
             await emit("DIAGNOSIS_STARTED", {"stage": "STARTED"})
             try:
                 metrics = {}
-                state = await harness.invoke(GRAPH, command, emit, metrics)
+                state = await harness.invoke(graph or GRAPH, command, emit, metrics)
                 result = check_event_size(masked(state["result"]))
                 if result["eventType"] == "PHOTO_REQUESTED":
                     result["payload"]["requestKey"] = str(uuid.uuid5(uuid.NAMESPACE_URL, command["eventId"] + ":photo"))
@@ -102,6 +103,10 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
 
 #  Kafka 우체국 창구
 async def run():
+    # 추가 자료 요청으로 멈춘 작업을 나중에 이어받으려면 그래프 상태가 남아 있어야 한다.
+    C.CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    checkpoints = AsyncSqliteSaver.from_conn_string(str(C.CHECKPOINT_PATH))
+    app = build_graph(await checkpoints.__aenter__())
     consumer = AIOKafkaConsumer(C.COMMANDS_TOPIC, bootstrap_servers=C.KAFKA, group_id=C.GROUP_ID,
                                 enable_auto_commit=False, auto_offset_reset=C.KAFKA_AUTO_OFFSET_RESET,
                                 max_poll_records=1, max_poll_interval_ms=C.KAFKA_MAX_POLL_INTERVAL_MS)
@@ -124,7 +129,7 @@ async def run():
             else:
                 while True:
                     try:
-                        await handle(command, producer)
+                        await handle(command, producer, graph=app)
                         break
                     except (CommandConflict, ValidationError, KeyError, TypeError):
                         await producer.send_and_wait(C.DLT_TOPIC, msg.value, key=msg.key)
@@ -136,6 +141,7 @@ async def run():
     finally:
         await consumer.stop()
         await producer.stop()
+        await checkpoints.__aexit__(None, None, None)
 
 
 if __name__ == "__main__":

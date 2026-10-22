@@ -341,7 +341,7 @@ async def fail(state: State, config) -> dict:
 # ── 조립 ────────────────────────────────────────────────
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     g = StateGraph(State)
     for fn in (classify_photos, split_text, pcb_mcp, mech_mcp, rag_mcp, judge, report, request_photo, fail):
         g.add_node(fn.__name__, observed(fn))
@@ -355,4 +355,4 @@ def build_graph():
     g.add_conditional_edges("judge", lambda s: s["decision"], {"COMPLETE": "report", "PHOTO": "request_photo", "FAIL": "fail"})
     for end in ("report", "request_photo", "fail"):
         g.add_edge(end, END)
-    return g.compile()
+    return g.compile(checkpointer=checkpointer)

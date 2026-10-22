@@ -197,6 +197,11 @@ def observed(fn):
     return node
 
 
+def thread_id(command: dict) -> str:
+    """재개할 상태를 가리키는 키. 재개 명령은 앞서 돌려준 checkpoint 값을 그대로 보낸다."""
+    return str(command["payload"].get("checkpoint") or command["taskId"])
+
+
 async def invoke(graph, command, emit, metrics=None):
     metadata = {**context(command), "thread_id": str(command["taskId"])}
     with tracing.execution_context(metadata):
@@ -223,7 +228,8 @@ async def _invoke(graph, command, emit, metrics=None):
                                       {"recursion_limit": C.RECURSION_LIMIT,
                                        "run_name": "repair.graph",
                                        "metadata": budget.context,
-                                       "configurable": {"emit": emit}})
+                                       "configurable": {"emit": emit,
+                                                        "thread_id": thread_id(command)}})
     except TimeoutError:
         # 전체 deadline과 개별 도구 timeout은 구분한다.
         if deadline is not None and deadline.expired():
