@@ -9,6 +9,7 @@ import java.util.*;
 
 @Service
 public class RepairService {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(RepairService.class);
     final Store db;final Access access;final LocalFiles files;final Catalog catalog;final String commands;
     public RepairService(Store db,Access access,LocalFiles files,Catalog catalog,@Value("${app.commands-topic}") String commands) {this.db=db;this.access=access;this.files=files;this.catalog=catalog;this.commands=commands;}
     @Transactional public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads) {return create(data,uploads,null);}
@@ -113,6 +114,7 @@ public class RepairService {
         db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);
         command(repair,retry,"DIAGNOSIS_REQUESTED",null,List.of());
         db.event(repair,"DIAGNOSIS_RETRY_QUEUED",Map.of("taskId",retry,"retryOfTaskId",taskId,"retryCount",jobs));
+        log.info("diagnosis_retry.queued repairId={} previousTaskId={} taskId={} retryCount={}",repair,taskId,retry,Json.number(old.get("retry_count"))+1);
     }
     void command(Long repair,Long task,String type,Long request,List<Long> added) {
         var t=db.one("SELECT * FROM diagnosis_job WHERE id=?",task);var payload=analysisInput(repair,task);

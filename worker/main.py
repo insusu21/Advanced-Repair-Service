@@ -16,7 +16,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from . import config as C
 from . import report
 from .context_policy import masked, check_event_size
-from .observability import configure_logging
+from .observability import configure_logging, context as execution_context, log_event
 from langgraph.errors import GraphRecursionError
 from .graph import build_graph
 
@@ -33,17 +33,23 @@ async def flush(journal, command, producer):
     rows = journal.db.execute("SELECT seq,body FROM events WHERE job=? AND sent=0 ORDER BY seq",
                               (command["eventId"],)).fetchall()
     for seq, body in rows:
+        event = json.loads(body)
+        fields = {**execution_context(command), "result_event_id": event.get("eventId"),
+                  "event_type": event.get("eventType"), "sequence": seq}
         await producer.send_and_wait(C.EVENTS_TOPIC, body.encode(), key=command["taskId"].encode())
         with journal.db:
             journal.db.execute("UPDATE events SET sent=1 WHERE job=? AND seq=?", (command["eventId"], seq))
+        log_event("result_event.published", **fields)
 
 
 async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
     """완료 결과·이벤트를 먼저 저장하고 전송. 전송 재시도에서는 모델을 다시 부르지 않는다."""
     owned = journal is None
     journal = journal or Journal(C.STATE_PATH)
+    fields = execution_context(command)
     try:
         result = journal.begin(command)
+        log_event("execution.started" if result is None else "execution.replayed", **fields)
         if result is None:
             lock = asyncio.Lock()
 
@@ -54,7 +60,8 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
                     try:
                         await flush(journal, command, producer)
                     except Exception as exc:
-                        log.warning("진행 이벤트 전송 보류: %s", type(exc).__name__)
+                        log_event("result_event.publish_deferred", level=logging.WARNING,
+                                  **fields, error_type=type(exc).__name__)
 
             await emit("DIAGNOSIS_STARTED", {"stage": "STARTED"})
             try:
@@ -65,7 +72,8 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
                     result["payload"]["requestKey"] = str(uuid.uuid5(uuid.NAMESPACE_URL, command["eventId"] + ":photo"))
                 journal.finish(command, result)  # JSON 계약 위반도 아래 실패 결과로 처리
             except Exception as exc:
-                log.error("진단 실행 실패: %s", type(exc).__name__)
+                log_event("execution.failed", level=logging.ERROR, **fields,
+                          error_type=type(exc).__name__)
                 code = ("GRAPH_STEP_LIMIT" if isinstance(exc, GraphRecursionError) else
                         exc.code if isinstance(exc, harness.LimitExceeded) else
                         "REQUIRED_TOOL_FAILED" if isinstance(exc, RequiredToolFailure) else
@@ -74,6 +82,8 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
                         "RUN_TIMEOUT" if isinstance(exc, TimeoutError) else "AGENT_ERROR")
                 result = {"eventType": "DIAGNOSIS_FAILED", "payload": {"errorCode": code}}
                 journal.finish(command, result)
+            else:
+                log_event("execution.completed", **fields, result_type=result["eventType"])
             finally:
                 with journal.db:
                     journal.db.execute("CREATE TABLE IF NOT EXISTS executions (event_id TEXT PRIMARY KEY, metrics TEXT NOT NULL)")
@@ -101,10 +111,11 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None):
                 json.dumps(outcome).encode(),
                 key=command["taskId"].encode(),
             )
+            log_event("processing_status.published", **fields, status=status)
         if result["payload"].get("errorCode") in harness.LIMIT_CODES | {
                 "AGENT_ERROR", "GRAPH_STEP_LIMIT", "REQUIRED_TOOL_FAILED", "PROMPT_CONFIG_ERROR", "TOOL_TIMEOUT"}:
             await producer.send_and_wait(C.DLT_TOPIC, json.dumps(command).encode(), key=command["taskId"].encode())
-        log.info("task %s → %s (리포트: %s)", command["taskId"], result["eventType"], path)
+        log_event("execution.result_published", **fields, result_type=result["eventType"])
         return result
     finally:
         if owned:
@@ -134,18 +145,30 @@ async def run():
                 ok = False
             if not ok:  # 깨진 메시지·모르는 명령 → DLT
                 await producer.send_and_wait(C.DLT_TOPIC, msg.value, key=msg.key)
+                log_event("command.dead_lettered", level=logging.WARNING,
+                          topic=C.COMMANDS_TOPIC, partition=msg.partition, offset=msg.offset)
             else:
+                log_event("command.received", **execution_context(command),
+                          partition=msg.partition, offset=msg.offset)
                 while True:
                     try:
                         await handle(command, producer)
                         break
                     except (CommandConflict, ValidationError, KeyError, TypeError):
                         await producer.send_and_wait(C.DLT_TOPIC, msg.value, key=msg.key)
+                        log_event("command.dead_lettered", level=logging.WARNING,
+                                  **execution_context(command), partition=msg.partition,
+                                  offset=msg.offset, error_type="invalid_command")
                         break
                     except Exception as exc:
-                        log.warning("저장 결과 재전송 대기: %s", type(exc).__name__)
+                        log_event("execution.retry_wait", level=logging.WARNING,
+                                  **execution_context(command), partition=msg.partition,
+                                  offset=msg.offset, error_type=type(exc).__name__)
                         await asyncio.sleep(3)
             await consumer.commit()
+            if ok:
+                log_event("command.committed", **execution_context(command),
+                          partition=msg.partition, offset=msg.offset)
     finally:
         await consumer.stop()
         await producer.stop()
