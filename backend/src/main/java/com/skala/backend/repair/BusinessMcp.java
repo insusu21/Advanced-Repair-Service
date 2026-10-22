@@ -14,7 +14,7 @@ public interface BusinessMcp {
     Map<String,Object> lookup(List<Long> partIds);
 }
 @Component
-@Profile("!dev & !test")
+@Profile("(!dev & !test) | realmcp") // [통합] dev에서도 realmcp 프로필을 붙이면 실제 업무 MCP(게이트웨이 경유)를 쓴다
 class HttpBusinessMcp implements BusinessMcp {
     final RestClient client;
     HttpBusinessMcp(@Value("${app.mcp-url}") String url,@Value("${app.mcp-token}") String token) {
@@ -35,7 +35,7 @@ class HttpBusinessMcp implements BusinessMcp {
     }
 }
 @Component
-@Profile({"dev","test"})
+@Profile("(dev | test) & !realmcp") // [통합] realmcp일 때는 가짜를 끈다
 class MockBusinessMcp implements BusinessMcp {
     final Store db;
     MockBusinessMcp(Store db) {this.db=db;}

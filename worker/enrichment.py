@@ -3,10 +3,17 @@ import json
 from fastmcp import Client
 
 from . import config as C
+from .context_policy import prepare_text
 from .harness import guarded
 from .tool_policy import check_object, check_response
 
 DENT_PARTS = frozenset(("boot", "doorouter", "fender", "front-bumper", "quaterpanel", "roof"))
+# [통합] Rag_mcp가 10/21부터 기계 MCP 표면 결함 6종을 그대로 받는다 (옛 dent/부위 형식은 미등록 처리)
+SURFACE_DEFECTS = frozenset(("crazing", "inclusion", "patches", "pitted_surface", "rolled-in_scale", "scratches"))
+
+
+def surface_labels(output):
+    return [d.get("type") for d in output.get("defects", []) if d.get("type") in SURFACE_DEFECTS]
 
 
 def dent_labels(output):
@@ -33,6 +40,7 @@ async def call(url, name, arguments):
 
 
 async def normalize_observation(text):
+    text = prepare_text(text, "normalize_observation")
     data = await call(C.OBSERVATION_MCP_URL, "normalize_observation",
                       {"raw_text": text, "origin": "technician", "technician_confirmed": True})
     if data.get("raw_text") != text or not isinstance(data.get("observations"), list):
@@ -69,4 +77,4 @@ async def list_damage_labels():
 
 async def search_reference_documents(query, collection="pcb_documents"):
     return await call(C.RAG_MCP_URL, "search_reference_documents",
-                      {"query": query, "collection": collection, "top_k": 3, "min_score": 0.75})
+                      {"query": prepare_text(query, "reference_query"), "collection": collection, "top_k": 3, "min_score": 0.75})

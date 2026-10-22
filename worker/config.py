@@ -48,6 +48,8 @@ PCB_MCP_PYTHON = os.getenv("PCB_MCP_PYTHON", PCB_MCP_PYTHON)
 TOOL_TIMEOUT = float(os.getenv("TOOL_TIMEOUT", "90"))
 RUN_TIMEOUT = float(os.getenv("RUN_TIMEOUT", "1800"))
 MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "2000"))
+MAX_PART_TOOL_CALLS = int(os.getenv("MAX_PART_TOOL_CALLS", "4"))  # [통합] 부품 확인 Agent가 업무 MCP를 부르는 최대 횟수
+SAVE_REPAIR_CASES = os.getenv("SAVE_REPAIR_CASES", "1") == "1"  # [통합] 진단을 rag-mcp에 미확정 사례로 저장
 RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "20"))
 MAX_NODE_EXECUTIONS = int(os.getenv("MAX_NODE_EXECUTIONS", "20"))
 MAX_SAME_INPUT_ATTEMPTS = int(os.getenv("MAX_SAME_INPUT_ATTEMPTS", "3"))
@@ -57,3 +59,29 @@ KAFKA_MAX_POLL_INTERVAL_MS = max(
     int(os.getenv("KAFKA_MAX_POLL_INTERVAL_MS", "0")))
 
 KAFKA_AUTO_OFFSET_RESET = os.getenv("KAFKA_AUTO_OFFSET_RESET", "earliest")
+
+# 문맥 제한: UTF-8 바이트로 텍스트 토큰 수를 보수적으로 예약한다.
+MAX_MCP_RESPONSE_BYTES = int(os.getenv("MAX_MCP_RESPONSE_BYTES", "262144"))
+OBSERVATION_CONTEXT_BYTES = int(os.getenv("OBSERVATION_CONTEXT_BYTES", "6000"))
+TOOL_CONTEXT_BYTES = int(os.getenv("TOOL_CONTEXT_BYTES", "8000"))
+REPORT_FINDINGS_BYTES = int(os.getenv("REPORT_FINDINGS_BYTES", "24000"))
+MAX_CONTEXT_TOKENS = int(os.getenv("MAX_CONTEXT_TOKENS", "64000"))
+MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
+MAX_RUN_TOKENS = int(os.getenv("MAX_RUN_TOKENS", "800000"))
+IMAGE_TOKEN_RESERVE = int(os.getenv("IMAGE_TOKEN_RESERVE", "50000"))
+MAX_EVENT_BYTES = int(os.getenv("MAX_EVENT_BYTES", "750000"))
+# [통합] 업무 MCP(재고·공장). 기본은 run.sh가 띄우는 로컬 mcp_servers/business (우리 DB를 그대로 읽음)
+# 팀원 ngrok 서버를 쓰려면 BUSINESS_MCP_URL=https://<ngrok>/mcp 와 아래 대응표(예: 1:47,3:46 / 1:12 / 1:12)를 준다
+BUSINESS_MCP_URL = os.getenv("BUSINESS_MCP_URL", "http://127.0.0.1:8015/mcp")
+
+
+def id_map(name, default):
+    """'1:47,3:46' → {'1': '47', '3': '46'}"""
+    return dict(pair.split(":") for pair in os.getenv(name, default).split(",") if pair)
+
+
+# [통합] 업무 MCP DB 번호가 Spring과 다를 때만 쓰는 대응표 (Spring 번호:업무 MCP 번호). 비면 같은 번호
+# ngrok 서버 기준 값: 부품 1:47,3:46 (MOTOR/PCB-DEMO-001, Lidar 없음) / 창고 1:12 / 공장 1:12
+BUSINESS_PART_MAP = id_map("BUSINESS_PART_MAP", "")
+BUSINESS_WAREHOUSE_MAP = id_map("BUSINESS_WAREHOUSE_MAP", "")
+BUSINESS_FACTORY_MAP = id_map("BUSINESS_FACTORY_MAP", "")

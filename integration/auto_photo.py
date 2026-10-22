@@ -5,9 +5,9 @@
   2) POST /api/repairs/{id}/attachments?requestId=..&target=PCB|MOTOR   (지정 사진 업로드)
   3) POST /api/repairs/{id}/diagnosis/resume  {requestId, submissionKey, attachmentIds}
 
-실행: DEV_PASSWORD가 있는 셸에서 python3 integration/auto_photo.py  (Ctrl+C로 종료)
+실행: python3 integration/auto_photo.py  (Ctrl+C로 종료, 로그인 비밀번호는 LOGIN_PASSWORD, 기본 1234)
 요청 후 AUTO_PHOTO_GRACE초(기본 60) 동안은 기다린다. 그 안에 프론트에서 올리면 대역은 넘어간다.
-지정 사진: integration/designated/{PCB,MOTOR}.jpg  (GENERAL 요청이면 둘 다 올린다)
+지정 사진: source/01_pcb.jpg(PCB), source/09_mech_extra.jpg(기계)  (GENERAL 요청이면 둘 다 올린다)
 """
 import os
 import time
@@ -17,12 +17,14 @@ from pathlib import Path
 
 from demo import Client, BASE  # 같은 폴더의 로그인·호출 도우미
 
-DESIGNATED = Path(__file__).parent / "designated"
+# [통합] 제출용 정리: 사진을 레포 맨 위 source/로 옮김
+SOURCE = Path(__file__).parent.parent / "source"
+DESIGNATED = {"PCB": SOURCE / "01_pcb.jpg", "MOTOR": SOURCE / "09_mech_extra.jpg"}
 GRACE = int(os.environ.get("AUTO_PHOTO_GRACE", "60"))  # 이 시간(초) 안에 프론트에서 사람이 올리면 대역은 손대지 않는다
 
 
 def upload(c, repair, request_id, target):
-    path = DESIGNATED / f"{target}.jpg"
+    path = DESIGNATED[target]
     b = "b-" + uuid.uuid4().hex
     body = b"".join([f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="{path.name}"\r\nContent-Type: image/jpeg\r\n\r\n'.encode(),
                      path.read_bytes(), f"\r\n--{b}--\r\n".encode()])

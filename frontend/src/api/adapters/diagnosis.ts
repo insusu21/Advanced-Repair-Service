@@ -151,8 +151,11 @@ export function toDiagnosis(
     inspectionSteps: res?.inspectionSteps ?? [],
     repairMethod: res?.repairSteps?.length ? res.repairSteps : splitSteps(res?.repairMethod),
     parts: recommended.map((p) => {
-      const part = ctx.parts.find((x) => x.id === p.partId)
-      return { partId: p.partId, partName: part?.name ?? `부품 #${p.partId}`, partNo: part?.partNo ?? '-', quantity: p.quantity, reason: res?.summary ?? '' }
+      // [통합] task.recommendedParts는 백엔드 테이블 행이라 part_id(snake_case)로 온다 → '부품 #undefined'가 떴다
+      const partId = String(p.partId ?? (p as unknown as Record<string, unknown>).part_id ?? '')
+      const part = ctx.parts.find((x) => String(x.id) === partId)
+      // [통합] 에이전트는 부품별 이유를 주지 않는다. 리포트 요약을 넣으면 부품마다 같은 긴 글이 반복돼 비운다
+      return { partId, partName: part?.name ?? `부품 #${partId}`, partNo: part?.partNo ?? '-', quantity: p.quantity, reason: '' }
     }),
     sources,
     technicianDecision: ctx.decision,

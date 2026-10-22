@@ -63,13 +63,13 @@ def test_100_dent_photos_produce_one_interpretation_label(monkeypatch):
     interpreter = AsyncMock(return_value={"detections": []})
     monkeypatch.setattr(enrichment, "interpret_damage", interpreter)
     model = AsyncMock(return_value={"is_defective": True, "annotated_image": "/tmp/fixture.jpg",
-                                   "defects": [{"type": "roof-dent", "confidence": .7}]})
+                                   "defects": [{"type": "scratches", "confidence": .7}]})  # [통합] 표면 결함 라벨로 변경
     state = {"photos": [{"kind": "MECH", "path": "fixture.jpg", "attachmentId": str(i+1)}
                         for i in range(100)]}
     asyncio.run(graph.run_photo_mcp(state, {"configurable": {"emit": AsyncMock()}},
                                    "MECH", model, "detect_dents", "MOTOR", "mechanical"))
     assert model.await_count == 100
-    interpreter.assert_awaited_once_with([{"damage_type": "dent", "part": "roof"}])
+    interpreter.assert_awaited_once_with(["scratches"])
 
 
 def test_download_failure_produces_failed_not_sample_report(monkeypatch, tmp_path):
