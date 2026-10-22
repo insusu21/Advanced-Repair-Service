@@ -116,3 +116,29 @@ def test_worker_emits_pause_event_then_resumes_on_next_command(fixture_tools, tm
     assert first["eventType"] == "PHOTO_REQUESTED" and first["payload"]["requestKey"]
     assert second["eventType"] == "DIAGNOSIS_COMPLETED"
     assert [e["eventType"] for e in producer.events].count("DIAGNOSIS_COMPLETED") == 1
+
+
+def test_finished_job_leaves_no_checkpoint_but_paused_one_remains(fixture_tools, tmp_path):
+    """끝난 작업의 상태는 지우고, 기다리는 작업의 상태는 남긴다."""
+    from worker import main, tools
+    from worker.journal import Journal
+
+    async def run(found):
+        tools.call_pcb_mcp.return_value = {**fixture_tools, "is_defective": found,
+                                           "defects": [{"type": "short", "confidence": .8}] if found else []}
+        async with AsyncSqliteSaver.from_conn_string(":memory:") as saver:
+            app = graph.build_graph(saver)
+            journal = Journal(tmp_path / f"state-{found}.db")
+            try:
+                cmd = command()
+                result = await main.handle(cmd, Producer(), journal, graph=app)
+                config = {"configurable": {"thread_id": str(cmd["taskId"])}}
+                return result["eventType"], (await app.aget_state(config)).values
+            finally:
+                journal.close()
+
+    done_type, done_state = asyncio.run(run(True))
+    assert done_type == "DIAGNOSIS_COMPLETED" and not done_state, "끝난 작업은 상태가 남지 않는다"
+
+    paused_type, paused_state = asyncio.run(run(False))
+    assert paused_type == "PHOTO_REQUESTED" and paused_state, "기다리는 작업은 상태가 남아야 재개된다"

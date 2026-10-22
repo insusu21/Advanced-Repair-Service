@@ -48,6 +48,23 @@ async def waiting_for_input(graph, command) -> bool:
     return any(task.interrupts for task in snapshot.tasks)
 
 
+async def drop_checkpoints(graph, command, result) -> None:
+    """끝난 작업의 그래프 상태를 지운다.
+
+    추가 자료를 기다리는 작업은 남겨 둔다. 결과는 journal에 있으므로 같은 이벤트가
+    다시 와도 모델을 부르지 않는다.
+    """
+    if result["eventType"] == "PHOTO_REQUESTED":
+        return
+    saver = getattr(graph, "checkpointer", None)
+    if saver is None:
+        return
+    try:
+        await saver.adelete_thread(harness.thread_id(command))
+    except Exception as exc:  # 정리 실패가 진단 결과를 바꾸지 않는다
+        log.warning("체크포인트 정리 보류: %s", type(exc).__name__)
+
+
 async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=None):
     """완료 결과·이벤트를 먼저 저장하고 전송. 전송 재시도에서는 모델을 다시 부르지 않는다."""
     owned = journal is None
@@ -78,6 +95,7 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=
                 if result["eventType"] == "PHOTO_REQUESTED":
                     result["payload"]["requestKey"] = str(uuid.uuid5(uuid.NAMESPACE_URL, command["eventId"] + ":photo"))
                 journal.finish(command, result)  # JSON 계약 위반도 아래 실패 결과로 처리
+                await drop_checkpoints(app, command, result)
             except Exception as exc:
                 log.error("진단 실행 실패: %s", type(exc).__name__)
                 code = ("GRAPH_STEP_LIMIT" if isinstance(exc, GraphRecursionError) else
@@ -88,6 +106,7 @@ async def handle(command: dict, producer: AIOKafkaProducer, journal=None, graph=
                         "RUN_TIMEOUT" if isinstance(exc, TimeoutError) else "AGENT_ERROR")
                 result = {"eventType": "DIAGNOSIS_FAILED", "payload": {"errorCode": code}}
                 journal.finish(command, result)
+                await drop_checkpoints(app, command, result)
             finally:
                 with journal.db:
                     journal.db.execute("CREATE TABLE IF NOT EXISTS executions (event_id TEXT PRIMARY KEY, metrics TEXT NOT NULL)")
