@@ -9,9 +9,11 @@ import java.util.*;
 
 @Service
 public class RepairService {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(RepairService.class);
     final Store db;final Access access;final LocalFiles files;final Catalog catalog;final String commands;final PhotoQualityService quality;final PhotoQualityExecutor validation;final com.skala.backend.repair.quality.PhotoQualityProperties policy;final org.springframework.transaction.support.TransactionTemplate tx;
     public RepairService(Store db,Access access,LocalFiles files,Catalog catalog,PhotoQualityService quality,PhotoQualityExecutor validation,com.skala.backend.repair.quality.PhotoQualityProperties policy,org.springframework.transaction.PlatformTransactionManager manager,@Value("${app.commands-topic}") String commands) {this.db=db;this.access=access;this.files=files;this.catalog=catalog;this.commands=commands;this.quality=quality;this.validation=validation;this.policy=policy;this.tx=new org.springframework.transaction.support.TransactionTemplate(manager);}
     public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads) {return create(data,uploads,null);}
+    // [통합 패치] 사진마다 부위(target)를 받는다. 프론트 PCB/MECHANICAL → DB 규칙 PCB/MOTOR
     public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads,List<String> targets) {
         access.technician();
         if(uploads==null || uploads.isEmpty() || uploads.size()>10) throw ApiError.bad("INITIAL_FILES_REQUIRED_MAX_10");
@@ -130,6 +132,23 @@ public class RepairService {
         if(Boolean.TRUE.equals(job.get("done")) || (job.get("lease_until")!=null && Instant.parse(String.valueOf(job.get("lease_until"))).isAfter(Instant.now()))) throw ApiError.conflict("PROCUREMENT_NOT_RETRYABLE");
         db.update("UPDATE procurement_job SET attempts=0,next_attempt_at=now(),lease_until=NULL WHERE case_id=?",repair);
         db.update("UPDATE repair_case SET procurement_status='PENDING' WHERE id=?",repair);db.audit(access.user().email,"PROCUREMENT_RETRIED",repair,Map.of());
+    }
+    @Transactional public void retryFailedDiagnosis(Long taskId) {
+        var failed=db.list("SELECT * FROM diagnosis_job WHERE id=? AND status='FAILED' FOR UPDATE",taskId);
+        if(failed.isEmpty()) return;
+        var old=failed.getFirst(); Long repair=Json.id(old.get("case_id"));
+        db.one("SELECT id FROM repair_case WHERE id=? FOR UPDATE",repair);
+        // Only retry the latest failed diagnosis, with at most three replacement jobs per case.
+        var latest=db.one("SELECT id,status FROM diagnosis_job WHERE case_id=? ORDER BY created_at DESC,id DESC LIMIT 1",repair);
+        if(!taskId.equals(Json.id(latest.get("id"))) || !"FAILED".equals(latest.get("status"))) return;
+        long jobs=Json.number(db.one("SELECT count(*) AS n FROM diagnosis_job WHERE case_id=?",repair).get("n"));
+        if(jobs>=4) return;
+        Long retry=db.insert("INSERT INTO diagnosis_job(case_id,request_key,workflow_version,retry_count) VALUES (?,?,?,?)",
+            repair,UUID.randomUUID(),old.get("workflow_version"),Math.max(1,Json.number(old.get("retry_count"))+1));
+        db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);
+        command(repair,retry,"DIAGNOSIS_REQUESTED",null,List.of());
+        db.event(repair,"DIAGNOSIS_RETRY_QUEUED",Map.of("taskId",retry,"retryOfTaskId",taskId,"retryCount",jobs));
+        log.info("diagnosis_retry.queued repairId={} previousTaskId={} taskId={} retryCount={}",repair,taskId,retry,Json.number(old.get("retry_count"))+1);
     }
     void command(Long repair,Long task,String type,Long request,List<Long> added) {
         var t=db.one("SELECT * FROM diagnosis_job WHERE id=?",task);var payload=analysisInput(repair,task);
