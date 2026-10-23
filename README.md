@@ -80,6 +80,24 @@ cd Final_Robot-Vacuum-Repair-Agent
 ## 업무 MCP (재고·발주) 보기
 흐름: 진단 완료 → Spring `ProcurementWorker`(2초마다) → 게이트웨이 8089 `inventory.lookup` → 업무 MCP 8015 `get_part_availability` → Spring이 재고 스냅샷 저장·발주 초안 생성 → 프론트
 
+### 기사 방문 준비 리포트
+업무 MCP의 `get_repair_preparation_report(repair_id)` 도구는 DB의 접수·제품·최신 진단·사진 근거·추천 부품·창고 재고를 조회해 증상 및 원인 요약, 준비 공구·부품, 사진 내 고장 좌표 표시를 포함한 Markdown 리포트를 만든다. 리포트와 표시 사진은 `REPAIR_REPORT_DIR` (기본 `mcp_servers/business/reports/`)에 저장되며, 파일 저장소 경로는 `FILE_ROOT` (기본 `backend/data/files/`)로 지정할 수 있다. 사진 표시에는 DB에 진단 좌표가 기록되어 있어야 한다. 과거 진단 결과에 공구 추천이 없으면 저장된 원인 후보·수리 방법에서 추론하며, 추론 근거가 없으면 확인 필요 경고를 남긴다.
+
+```python
+from fastmcp import Client
+import asyncio
+
+async def main():
+    async with Client("http://127.0.0.1:8015/mcp") as client:
+        report = await client.call_tool(
+            "get_repair_preparation_report",
+            {"repair_id": 123},
+        )
+        print(report)
+
+asyncio.run(main())
+```
+
 | 단계 | 코드 |
 |---|---|
 | Spring이 부름 | `backend/src/main/java/com/skala/backend/repair/ProcurementWorker.java` (`mcp.lookup`) |
