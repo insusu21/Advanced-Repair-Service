@@ -835,7 +835,7 @@ def get_repair_preparation_report(repair_id: int) -> dict[str, Any]:
         selected_ids.extend(photo["id"] for photo in reversed(all_photos)
                             if photo["id"] not in selected_ids and len(selected_ids) < 3)
     if len(all_photos) > 3:
-        photo_warning = "접수 사진이 3장을 초과하여 이번 진단 근거에 연결된 사진(최대 3장)만 표시했습니다."
+        photo_warning = "접수 사진이 3장을 초과하여 최대 3장만 표시했습니다. 진단 근거에 연결된 사진을 우선 표시하고, 부족한 경우 최근 접수 사진을 추가했습니다."
     else:
         photo_warning = None
 

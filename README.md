@@ -85,12 +85,17 @@ cd Final_Robot-Vacuum-Repair-Agent
 
 ```python
 from fastmcp import Client
+import asyncio
 
-async with Client("http://127.0.0.1:8015/mcp") as client:
-    report = await client.call_tool(
-        "get_repair_preparation_report",
-        {"repair_id": 123},
-    )
+async def main():
+    async with Client("http://127.0.0.1:8015/mcp") as client:
+        report = await client.call_tool(
+            "get_repair_preparation_report",
+            {"repair_id": 123},
+        )
+        print(report)
+
+asyncio.run(main())
 ```
 
 | 단계 | 코드 |
