@@ -10,8 +10,8 @@ import java.util.*;
 @Service
 public class RepairService {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(RepairService.class);
-    final Store db;final Access access;final LocalFiles files;final Catalog catalog;final String commands;final PhotoQualityService quality;final PhotoQualityExecutor validation;final com.skala.backend.repair.quality.PhotoQualityProperties policy;final org.springframework.transaction.support.TransactionTemplate tx;
-    public RepairService(Store db,Access access,LocalFiles files,Catalog catalog,PhotoQualityService quality,PhotoQualityExecutor validation,com.skala.backend.repair.quality.PhotoQualityProperties policy,org.springframework.transaction.PlatformTransactionManager manager,@Value("${app.commands-topic}") String commands) {this.db=db;this.access=access;this.files=files;this.catalog=catalog;this.commands=commands;this.quality=quality;this.validation=validation;this.policy=policy;this.tx=new org.springframework.transaction.support.TransactionTemplate(manager);}
+    final Store db;final Access access;final LocalFiles files;final Catalog catalog;final String commands;final WarrantyService warranty;final PhotoQualityService quality;final PhotoQualityExecutor validation;final com.skala.backend.repair.quality.PhotoQualityProperties policy;final org.springframework.transaction.support.TransactionTemplate tx;
+    public RepairService(Store db,Access access,LocalFiles files,Catalog catalog,WarrantyService warranty,PhotoQualityService quality,PhotoQualityExecutor validation,com.skala.backend.repair.quality.PhotoQualityProperties policy,org.springframework.transaction.PlatformTransactionManager manager,@Value("${app.commands-topic}") String commands) {this.warranty=warranty;this.db=db;this.access=access;this.files=files;this.catalog=catalog;this.commands=commands;this.quality=quality;this.validation=validation;this.policy=policy;this.tx=new org.springframework.transaction.support.TransactionTemplate(manager);}
     public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads) {return create(data,uploads,null);}
     // [통합 패치] 사진마다 부위(target)를 받는다. 프론트 PCB/MECHANICAL → DB 규칙 PCB/MOTOR
     public Map<String,Object> create(Inputs.Intake data,List<MultipartFile> uploads,List<String> targets) {
@@ -23,8 +23,11 @@ public class RepairService {
     private Map<String,Object> createSaved(Inputs.Intake data,List<MultipartFile> uploads,List<String> targets) {
         access.technician();var user=access.user();
         var product=db.one("SELECT serial_number FROM product WHERE id=?",data.productId());var snapshot=catalog.product((String)product.get("serial_number"));
+        if(data.purchaseDate()!=null && data.purchaseDate().isAfter(WarrantyService.today()))throw ApiError.bad("FUTURE_PURCHASE_DATE");
         Long id=db.insert("INSERT INTO repair_case(case_number,center_id,product_id,technician_id,symptom,error_codes,firmware_version,user_input,product_snapshot) VALUES (?,?,?,?,?,?::jsonb,?,?::jsonb,?::jsonb)",
             "R-"+UUID.randomUUID(),user.centerId,data.productId(),user.id,data.symptoms(),Json.write(data.errorCodes()),data.firmware(),Json.raw(data.userInput()),Json.write(snapshot));
+        db.update("UPDATE repair_case SET purchase_date=?,service_type=? WHERE id=?",data.purchaseDate(),data.serviceType()==null?"CENTER":data.serviceType(),id);
+        warranty.record(id,WarrantyService.today());
         if(uploads==null || uploads.isEmpty() || uploads.size()>10) throw ApiError.bad("INITIAL_FILES_REQUIRED_MAX_10");
         var attachments=new ArrayList<Map<String,Object>>();for(int i=0;i<uploads.size();i++) attachments.add(addFile(id,null,uploads.get(i),targets==null||i>=targets.size()?null:targets.get(i)));
         db.audit(user.email,"REPAIR_CREATED",id,data);
@@ -44,10 +47,16 @@ public class RepairService {
             }
             return Map.of("repairId",repair,"taskId",existing.getFirst().get("id"),"status",existing.getFirst().get("status"));
         }
+        var intake=db.one("SELECT intake_source,purchase_date FROM repair_case WHERE id=?",repair);
+        if(intake.get("intake_source").equals("CONSUMER") && (intake.get("purchase_date")==null || requested==null))throw ApiError.conflict("CONSUMER_REVIEW_AND_SELECTION_REQUIRED");
+        if(intake.get("purchase_date")!=null && WarrantyService.date(intake.get("purchase_date")).isAfter(WarrantyService.today()))throw ApiError.bad("FUTURE_PURCHASE_DATE");
         if(db.list("SELECT id FROM attachment WHERE case_id=?",repair).isEmpty()) throw ApiError.conflict("ATTACHMENTS_REQUIRED");
+        var appliance=db.one("SELECT m.appliance_type FROM product_model m JOIN product p ON p.model_id=m.id JOIN repair_case r ON r.product_id=p.id WHERE r.id=?",repair).get("appliance_type");
+        if(!appliance.equals("VACUUM_CLEANER"))throw ApiError.conflict("APPLIANCE_DIAGNOSIS_UNSUPPORTED");
         var selected=quality.chooseInitial(repair,requested);
         Long task=db.insert("INSERT INTO diagnosis_job(case_id,request_key,workflow_version) VALUES (?,?,'repair-v2')",repair,key==null?UUID.randomUUID():key);
         quality.freeze(repair,task,1,selected,List.of());
+        db.update("UPDATE repair_case SET technician_id=coalesce(technician_id,?) WHERE id=?",access.user().id,repair);
         db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);command(repair,task,"DIAGNOSIS_REQUESTED",null,List.of());
         db.event(repair,"DIAGNOSIS_QUEUED",Map.of("taskId",task));return Map.of("repairId",repair,"taskId",task,"status","QUEUED");
     }
@@ -134,7 +143,9 @@ public class RepairService {
         db.update("UPDATE repair_case SET procurement_status='PENDING' WHERE id=?",repair);db.audit(access.user().email,"PROCUREMENT_RETRIED",repair,Map.of());
     }
     @Transactional public void retryFailedDiagnosis(Long taskId) {
-        var failed=db.list("SELECT * FROM diagnosis_job WHERE id=? AND status='FAILED' FOR UPDATE",taskId);
+        var original=db.list("SELECT case_id FROM diagnosis_job WHERE id=?",taskId);if(original.isEmpty())return;
+        db.one("SELECT id FROM repair_case WHERE id=? FOR UPDATE",original.getFirst().get("case_id"));
+        var failed=db.list("SELECT * FROM diagnosis_job WHERE id=? AND status='FAILED' AND error_code IN ('AGENT_TEMPORARY_FAILURE','SERVICE_UNAVAILABLE','RESULT_EVENT_DLT') FOR UPDATE",taskId);
         if(failed.isEmpty()) return;
         var old=failed.getFirst(); Long repair=Json.id(old.get("case_id"));
         db.one("SELECT id FROM repair_case WHERE id=? FOR UPDATE",repair);
@@ -143,9 +154,12 @@ public class RepairService {
         if(!taskId.equals(Json.id(latest.get("id"))) || !"FAILED".equals(latest.get("status"))) return;
         long jobs=Json.number(db.one("SELECT count(*) AS n FROM diagnosis_job WHERE case_id=?",repair).get("n"));
         if(jobs>=4) return;
+        if(!db.list("SELECT a.id FROM diagnosis_input_attachment i JOIN attachment a ON a.id=i.attachment_id LEFT JOIN photo_quality_result q ON q.id=i.quality_result_id WHERE i.job_id=? AND i.input_revision=? AND (a.use_status<>'AVAILABLE' OR (i.quality_gate='CHECKED' AND (a.latest_quality_result_id IS DISTINCT FROM i.quality_result_id OR q.status<>'COMPLETED' OR q.policy_version<>?)))",taskId,old.get("input_revision"),policy.effectiveVersion()).isEmpty())return;
         Long retry=db.insert("INSERT INTO diagnosis_job(case_id,request_key,workflow_version,retry_count) VALUES (?,?,?,?)",
             repair,UUID.randomUUID(),old.get("workflow_version"),Math.max(1,Json.number(old.get("retry_count"))+1));
         db.update("UPDATE repair_case SET status='DIAGNOSING',version=version+1 WHERE id=?",repair);
+        db.update("INSERT INTO diagnosis_input_attachment(job_id,input_revision,attachment_id,quality_result_id,warning_confirmation_id,added,quality_gate) SELECT ?,1,attachment_id,quality_result_id,warning_confirmation_id,false,quality_gate FROM diagnosis_input_attachment WHERE job_id=? AND input_revision=?",retry,taskId,old.get("input_revision"));
+        db.update("UPDATE diagnosis_job SET photo_request_count=? WHERE id=?",old.get("photo_request_count"),retry);
         command(repair,retry,"DIAGNOSIS_REQUESTED",null,List.of());
         db.event(repair,"DIAGNOSIS_RETRY_QUEUED",Map.of("taskId",retry,"retryOfTaskId",taskId,"retryCount",jobs));
         log.info("diagnosis_retry.queued repairId={} previousTaskId={} taskId={} retryCount={}",repair,taskId,retry,Json.number(old.get("retry_count"))+1);
