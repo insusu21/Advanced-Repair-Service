@@ -16,7 +16,7 @@
     "write_report": {
       "file": "write_report.md",
       "version": "1.1.0",
-      "sha256": "e6140526926496c288fec7b75fa84ae2ca46efeb465b5f9976657c96348634fd",
+      "sha256": "9cf81e6602a3e60220855d916aa20c37c6ee00f3bf9de546a0dd0dcbc7e86631",
       "output_schema": "Report"
     }
   }
