@@ -1,5 +1,5 @@
 {
-  "bundle_version": "1.0.0",
+  "bundle_version": "1.1.0",
   "prompts": {
     "classify_photo": {
       "file": "classify_photo.md",
@@ -15,8 +15,8 @@
     },
     "write_report": {
       "file": "write_report.md",
-      "version": "1.0.0",
-      "sha256": "efdfe415b4df11f85d830d5fb555757c213b1c6b0c7b27495fcb2fdbd8a64098",
+      "version": "1.1.0",
+      "sha256": "e6140526926496c288fec7b75fa84ae2ca46efeb465b5f9976657c96348634fd",
       "output_schema": "Report"
     }
   }

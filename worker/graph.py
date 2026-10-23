@@ -227,6 +227,7 @@ async def report(state: State, config) -> dict:
                           **{k: v for k, v in h.items() if k != "kind"}} for h in f["output"]["hits"]]
     payload = {"summary": r.summary, "modelVersion": C.MODEL_VERSION, "repairMethod": r.repairMethod,
                "candidates": candidates, "recommendedParts": [p.model_dump() for p in r.recommendedParts],
+               "recommendedTools": [t.model_dump() for t in r.recommendedTools],
                "evidence": evidence, "analysisResults": analysis_summary(state)["analysisResults"],
                **(await screen_fields(state, candidates))}
     if not any(e["type"] == "PHOTO" for e in evidence):

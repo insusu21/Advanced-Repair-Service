@@ -135,11 +135,18 @@ class RecommendedPart(BaseModel):
     quantity: int = Field(ge=1, le=100)
 
 
+class RecommendedTool(BaseModel):
+    name: str = Field(description="수리 기사가 준비할 공구 이름")
+    purpose: str = Field(description="이 공구를 사용할 점검·수리 목적")
+    evidence: str = Field(description="진단 근거 또는 수리 방법과 연결되는 이유")
+
+
 class Report(BaseModel):
     summary: str
     repairMethod: str
     candidates: list[Candidate] = Field(min_length=1)
     recommendedParts: list[RecommendedPart] = Field(default_factory=list, max_length=20)
+    recommendedTools: list[RecommendedTool] = Field(default_factory=list, max_length=10)
 
     @field_validator("summary", "repairMethod")
     @classmethod
