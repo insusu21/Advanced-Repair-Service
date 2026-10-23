@@ -258,6 +258,14 @@ FROM confirmed_fault x JOIN repair_report r ON r.id=x.report_id AND r.confirmed_
 JOIN repair_report_revision rr ON rr.report_id=r.id AND rr.revision=r.confirmed_revision
 JOIN repair_case c ON c.id=r.case_id GROUP BY 1,2,3,4,5,6;
 
+-- V6 Kafka 처리 결과 기록 (PR #4). 마이그레이션과 같게 맞춤
+ALTER TABLE outbox_event
+ ADD COLUMN agent_status text CHECK(agent_status IN ('SUCCEEDED','FAILED')),
+ ADD COLUMN agent_finished_at timestamptz;
+CREATE INDEX outbox_agent_status ON outbox_event(job_id,agent_status)
+ WHERE topic IS NOT NULL;
+
+-- V7 사진 품질
 ALTER TABLE attachment ADD COLUMN quality_required boolean NOT NULL DEFAULT false,
  ADD COLUMN latest_quality_result_id bigint,
  ADD COLUMN use_status text NOT NULL DEFAULT 'AVAILABLE' CHECK(use_status IN ('AVAILABLE','EXCLUDED','REPLACED')),

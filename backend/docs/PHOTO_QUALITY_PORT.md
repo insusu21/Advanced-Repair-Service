@@ -6,7 +6,7 @@
 
 ## DB
 
-기존 V1~V5와 번호 충돌 없이 `V6__photo_quality_and_diagnosis_selection.sql`을 추가했다. 기존 마이그레이션은 변경하지 않았다.
+기존 V1~V6과 번호 충돌 없이 `V7__photo_quality_and_diagnosis_selection.sql`을 추가했다 (V6은 Kafka 처리 결과 기록이 사용). 기존 마이그레이션은 변경하지 않았다.
 
 - 신규: photo_quality_result, photo_quality_confirmation, diagnosis_input_attachment.
 - attachment 추가: quality_required, latest_quality_result_id, use_status, replaced_by_id.
